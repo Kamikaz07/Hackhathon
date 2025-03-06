@@ -10,6 +10,15 @@ import socket
 
 # Initialize pygame
 pygame.init()
+if not pygame.display.get_init():
+    print("Erro: Não foi possível inicializar o display do Pygame")
+    sys.exit(1)
+
+if not pygame.font.get_init():
+    pygame.font.init()
+    if not pygame.font.get_init():
+        print("Erro: Não foi possível inicializar as fontes do Pygame")
+        sys.exit(1)
 
 # Constants
 SCREEN_WIDTH = 800

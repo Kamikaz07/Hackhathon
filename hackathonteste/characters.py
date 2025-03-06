@@ -32,6 +32,10 @@ class Character:
         self.sprite = pygame.Surface((self.width, self.height))
         self.sprite.fill(self.color)
     
+    def get_color(self):
+        """Get base color for the character"""
+        return (200, 200, 200)  # Default gray color for base character
+    
     def move(self, keys):
         """Move the character based on key input"""
         if self.is_opponent:
@@ -251,17 +255,19 @@ class Fighter(Character):
     def __init__(self, x, y, name, is_opponent=False):
         super().__init__(x, y, name, is_opponent)
         self.health = 250
-        self.attack_power = 15
+        self.attack_power = 25  # Higher attack power for Fighter
         self.defense = 8
         self.attack_range = 70
         self.special_damage = 30
-        self.color = (255, 0, 0)
-        self.attack_power = 25
         self.speed = 4
         
         # Visual representation
         self.sprite = pygame.Surface((self.width, self.height))
         self.sprite.fill(self.color)
+    
+    def get_color(self):
+        """Fighter's unique color"""
+        return (255, 0, 0)  # Red for Fighter
     
     def special_ability(self, opponent):
         """Fighter's special ability: Strong blow that does double damage"""
@@ -288,12 +294,15 @@ class Mage(Character):
         self.defense = 4
         self.attack_range = 150
         self.special_damage = 35
-        self.color = (0, 0, 255)
         self.speed = 5
         
         # Visual representation
         self.sprite = pygame.Surface((self.width, self.height))
         self.sprite.fill(self.color)
+    
+    def get_color(self):
+        """Mage's unique color"""
+        return (0, 0, 255)  # Blue for Mage
     
     def special_ability(self, opponent):
         """Mage's special ability: Freeze opponent"""
@@ -321,12 +330,15 @@ class Archer(Character):
         self.defense = 5
         self.attack_range = 200
         self.special_damage = 25
-        self.color = (0, 255, 0)
         self.speed = 6
         
         # Visual representation
         self.sprite = pygame.Surface((self.width, self.height))
         self.sprite.fill(self.color)
+    
+    def get_color(self):
+        """Archer's unique color"""
+        return (0, 255, 0)  # Green for Archer
     
     def special_ability(self, opponent):
         """Archer's special ability: Long range powerful shot"""
