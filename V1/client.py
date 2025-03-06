@@ -51,6 +51,7 @@ class GameClient:
         SWORD_SIZE = (120, 120)
         PLAYER_SIZE = (40, 60)
         PROJECTILE_SIZE = (30, 30)
+        PLATFORM_SIZE = (100, 100)
         BACKGROUND_SIZE = (SCREEN_WIDTH, SCREEN_HEIGHT)
         BUFF_SIZE = (30, 30)
         QUEIJADA_SIZE = (50, 50)
@@ -60,7 +61,11 @@ class GameClient:
                 pygame.image.load("./imgs/background.png").convert_alpha(), 
                 BACKGROUND_SIZE
             )
-            self.platform_image_base = pygame.image.load("./imgs/platform.png").convert_alpha()
+            self.platform_image_base = pygame.transform.scale(
+                pygame.image.load("./imgs/platform.png").convert_alpha(),
+                PLATFORM_SIZE
+            )
+            
             self.sword_image = pygame.transform.scale(
                 pygame.image.load("./imgs/sword.png").convert_alpha(), 
                 SWORD_SIZE
@@ -187,23 +192,18 @@ class GameClient:
         pygame.draw.rect(screen, (0, 255, 0), (x - 25, y - 50, bar_width * health_ratio, 5))
 
     def draw_platform(self, platform):
-        # Escalar a imagem da plataforma para corresponder às dimensões físicas
+        # Escalar a imagem da plataforma para as dimensões corretas
         platform_image = pygame.transform.scale(
             self.platform_image_base, (int(platform['width']), int(platform['height']))
         )
-        # Centralizar a imagem no ponto (x, y) recebido do servidor
-        screen.blit(platform_image, (
-            platform['x'] - platform_image.get_width() // 2,
-            platform['y'] - platform_image.get_height() // 2
-        ))
+        # Calcular a posição do canto superior esquerdo
+        img_x = platform['x'] - platform['width'] / 2
+        img_y = platform['y'] - platform['height'] / 2
+        # Desenhar a imagem
+        screen.blit(platform_image, (img_x, img_y))
         
-        # Desenhar contorno para melhor visualização
-        rect = pygame.Rect(
-            platform['x'] - platform['width'] // 2,
-            platform['y'] - platform['height'] // 2,
-            platform['width'],
-            platform['height']
-        )
+        # Desenhar o contorno branco na mesma posição e tamanho
+        rect = pygame.Rect(img_x + 5, img_y + 15, platform['width'], platform['height'] - 40)
         pygame.draw.rect(screen, (255, 255, 255), rect, 1)
 
     def draw_weapon(self, weapon):

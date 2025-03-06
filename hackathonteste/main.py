@@ -20,8 +20,13 @@ BLUE = (0, 0, 255)
 GREEN = (0, 255, 0)
 
 # Load background
-background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-background.fill((50, 50, 50))
+try:
+    background = pygame.image.load("./imagens_background/background.png").convert()
+    background = pygame.transform.scale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
+except:
+    # Fallback to a colored background if image fails to load
+    background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    background.fill((50, 50, 50))
 
 class Menu:
     def __init__(self, screen):

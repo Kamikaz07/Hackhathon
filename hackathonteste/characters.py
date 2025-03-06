@@ -7,7 +7,7 @@ class Animation:
     def __init__(self, folder_path):
         self.frames = []
         self.current_frame = 0
-        self.animation_speed = 0.2
+        self.animation_speed = 0.1  # Faster animation speed
         self.animation_timer = 0
         
         # Load all frames from the folder
@@ -156,6 +156,12 @@ class Character:
             self.direction = 1
             moving = True
         
+        # Handle jumping
+        if controls["up"] and self.jumps_left > 0:
+            self.velocity_y = self.jump_force
+            self.jumps_left -= 1
+            self.on_ground = False
+        
         # Aplicar atrito apropriado
         if self.on_ground:
             if not moving:
@@ -225,24 +231,29 @@ class Character:
             self.jumps_left = 2
         
         # Update attack state
-        if controls["attack"] and not self.attacking:
+        if controls["attack"] and not self.attacking and self.attack_cooldown <= 0:
             self.attacking = True
             self.attack_frame = 0
             # Apply knockback to opponent if in range
             if self.rect.colliderect(opponent.rect):
-                damage = self.attack_power
-                opponent.take_damage(damage)
-                # Calculate knockback based on opponent's damage percentage
-                knockback_power = self.base_knockback * (1 + opponent.health * 0.01)
-                knockback_x = self.direction * knockback_power
-                knockback_y = -knockback_power * 0.5
-                opponent.velocity_x = knockback_x
-                opponent.velocity_y = knockback_y
+                damage = self.calculate_attack_damage()
+                if damage is not None:
+                    opponent.take_damage(damage)
+                    # Calculate knockback based on opponent's damage percentage
+                    knockback_power = self.base_knockback * (1 + opponent.health * 0.01)
+                    knockback_x = self.direction * knockback_power
+                    knockback_y = -knockback_power * 0.5
+                    opponent.velocity_x = knockback_x
+                    opponent.velocity_y = knockback_y
         
         if self.attacking:
             self.attack_frame += 1
             if self.attack_frame >= self.attack_cooldown_max:
                 self.attacking = False
+                self.attack_cooldown = self.attack_cooldown_max
+        
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= 1
         
         # Update special attack state
         if controls["special"] and not self.using_special and self.special_cooldown <= 0:
@@ -252,13 +263,14 @@ class Character:
             # Apply special attack effects
             if self.rect.colliderect(opponent.rect):
                 damage = self.special_ability(opponent)
-                opponent.take_damage(damage)
-                # Calculate knockback based on opponent's damage percentage
-                knockback_power = self.base_knockback * 2 * (1 + opponent.health * 0.01)
-                knockback_x = self.direction * knockback_power
-                knockback_y = -knockback_power * 0.5
-                opponent.velocity_x = knockback_x
-                opponent.velocity_y = knockback_y
+                if damage is not None:
+                    opponent.take_damage(damage)
+                    # Calculate knockback based on opponent's damage percentage
+                    knockback_power = self.base_knockback * 2 * (1 + opponent.health * 0.01)
+                    knockback_x = self.direction * knockback_power
+                    knockback_y = -knockback_power * 0.5
+                    opponent.velocity_x = knockback_x
+                    opponent.velocity_y = knockback_y
         
         if self.using_special:
             self.special_frame += 1
@@ -313,6 +325,13 @@ class Character:
             damage *= 0.5  # Take half damage when defending
         
         self.health = min(self.max_health, self.health + damage)
+    
+    def calculate_attack_damage(self):
+        """Calculate attack damage based on character stats"""
+        base_damage = self.attack_power
+        if self.defending:
+            base_damage *= 0.5
+        return base_damage
     
     def special_ability(self, opponent):
         """Special ability, overridden by subclasses"""
@@ -384,7 +403,7 @@ class Fighter(Character):
             self.using_special = False
     
     def load_animations(self):
-        base_path = "hackathonteste/imagens_characters/PNG/Knight"
+        base_path = "./imagens_characters/PNG/Knight"
         self.animations = {
             "idle": Animation(os.path.join(base_path, "Idle")),
             "walk": Animation(os.path.join(base_path, "Walk")),
@@ -439,7 +458,7 @@ class Mage(Character):
             self.using_special = False
     
     def load_animations(self):
-        base_path = "hackathonteste/imagens_characters/PNG/Mage"
+        base_path = "./imagens_characters/PNG/Mage"
         self.animations = {
             "idle": Animation(os.path.join(base_path, "Idle")),
             "walk": Animation(os.path.join(base_path, "Walk")),
@@ -494,7 +513,7 @@ class Archer(Character):
             self.using_special = False
     
     def load_animations(self):
-        base_path = "hackathonteste/imagens_characters/PNG/Rogue"
+        base_path = "./imagens_characters/PNG/Rogue"
         self.animations = {
             "idle": Animation(os.path.join(base_path, "Idle")),
             "walk": Animation(os.path.join(base_path, "Walk")),

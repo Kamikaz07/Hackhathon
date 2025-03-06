@@ -100,7 +100,6 @@ class Buff:
 
 class GameServer:
     def __init__(self, level_name="pastelaria"):
-        # Collision types
         self.COLLISION_TYPE_PLATFORM = 1
         self.COLLISION_TYPE_PLAYER = 2
         self.COLLISION_TYPE_PROJECTILE = 3
@@ -113,6 +112,7 @@ class GameServer:
         self.space = pymunk.Space()
         self.space.gravity = (0, 900)
         self.space.damping = 0.9
+        self.space.iterations = 20  # Aumentar iterações para maior precisão
         
         self.players: Dict[str, Player] = {}
         self.weapons: List[Weapon] = []
@@ -128,13 +128,13 @@ class GameServer:
         self.current_level = level_name
         self.level_order = ["pastelaria", "estacao", "floresta", "montanha", "palacio"]
         self.current_level_index = 0
-        self.round_time = 120  # Tempo de cada round em segundos
+        self.round_time = 120
         self.round_timer = self.round_time
         self.round_count = 0
-        self.max_rounds = 10  # Máximo de rounds antes de acabar o jogo
+        self.max_rounds = 10
         self.queijada_spawned = False
-        self.queijada_position = None  # Será determinada dinamicamente
-        self.pombo_timer = 0  # Timer para o pombo roubar a queijada em caso de empate
+        self.queijada_position = None
+        self.pombo_timer = 0
         
         self.setup_routes()
         self.load_level(level_name)
@@ -163,7 +163,7 @@ class GameServer:
             
             platform.shape = pymunk.Poly.create_box(platform.body, (platform.width, platform.height))
             platform.shape.friction = 1.0
-            platform.shape.elasticity = 0.1  # Aumentar elasticidade para evitar que o jogador fique preso
+            platform.shape.elasticity = 0.0  # Sem elasticidade
             platform.shape.collision_type = self.COLLISION_TYPE_PLATFORM
             
             platform.movement_type = platform_config['movement_type']
@@ -180,48 +180,31 @@ class GameServer:
 
     def create_player_physics(self, player: Player):
         mass = 10.0
-        width, height = 25, 45  # Ajustar tamanho do jogador para melhor colisão
+        width, height = 25, 40
         moment = pymunk.moment_for_box(mass, (width, height))
         player.body = pymunk.Body(mass, moment)
         player.body.position = (400, SCREEN_HEIGHT - 150)
         
         player.shape = pymunk.Poly.create_box(player.body, (width, height))
         player.shape.friction = 1.0
-        player.shape.elasticity = 0.1
+        player.shape.elasticity = 0.0  # Sem elasticidade
         player.shape.collision_type = self.COLLISION_TYPE_PLAYER
         
-        # Armazenar a referência do servidor para usar em callbacks
         server_ref = self
         
         def pre_solve_collision(arbiter, space, data):
             try:
-                platform_shape = arbiter.shapes[0]
-                player_shape = arbiter.shapes[1]
+                platform_shape = arbiter.shapes[0]  # Plataforma
+                player_shape = arbiter.shapes[1]    # Jogador
                 
-                # Usar pontos de contato para determinar a colisão
-                if not arbiter.contact_point_set.points:
-                    return False
-                
-                # Obter o ponto de contato médio
-                contact_point = arbiter.contact_point_set.points[0].point_a
-                
-                # Calcular as posições relativas
-                platform_pos = platform_shape.body.position
-                player_pos = player_shape.body.position
-                
-                # Se o jogador está subindo (velocidade Y negativa)
-                if player_shape.body.velocity.y < 0:
-                    return False
-                
-                # Se o jogador está acima da plataforma
-                if player_pos.y < platform_pos.y:
+                # Se o jogador está caindo, permitir colisão
+                if player_shape.body.velocity.y >= 0:
                     for p_id, p in server_ref.players.items():
                         if p.shape == player_shape:
                             p.can_jump = True
                     return True
-                
-                return True
-                
+                else:
+                    return False
             except Exception as e:
                 print(f"Erro na colisão: {e}")
                 return False
@@ -528,126 +511,55 @@ class GameServer:
             buff.body.position = (x, y)
             buff.shape = pymunk.Circle(buff.body, 15)
             buff.shape.collision_type = self.COLLISION_TYPE_BUFF
-            
-            server_ref = self
-            
-            def buff_collision(arbiter, space, data):
-                try:
-                    if len(arbiter.shapes) >= 2:
-                        buff_shape = arbiter.shapes[0]
-                        player_shape = arbiter.shapes[1]
-                        
-                        for pid, player in server_ref.players.items():
-                            if player.shape == player_shape:
-                                if buff in server_ref.buffs:
-                                    server_ref.apply_buff_effect(player, buff)
-                                    server_ref.space.remove(buff.body, buff.shape)
-                                    server_ref.buffs.remove(buff)
-                                return False
-                except Exception as e:
-                    print(f"Erro na colisão do buff: {e}")
-                return True
-            
-            handler = self.space.add_collision_handler(self.COLLISION_TYPE_BUFF, self.COLLISION_TYPE_PLAYER)
-            handler.begin = buff_collision
-            
             self.space.add(buff.body, buff.shape)
             self.buffs.append(buff)
-            
-    def apply_buff_effect(self, player: Player, buff: Buff):
-        """Apply buff effects to a player"""
-        try:
-            if buff.type == "damage":
-                player.damage_boost = 1.5
-                player.buff_timer = 10.0
-            elif buff.type == "speed":
-                player.speed_boost = 1.5
-                player.buff_timer = 10.0
-            elif buff.type == "heal":
-                player.health = min(100, player.health + 25)
-            elif buff.type == "invencivel":
-                player.invincible_timer = 5.0
-            elif buff.type == "mordida":
-                player.damage_boost = 2.0
-                player.buff_timer = 5.0
-            elif buff.type == "queijada":
-                player.has_queijada = True
-            
-            asyncio.create_task(self.sio.emit('buff_collected', {
-                'player': player.id,
-                'buff_type': buff.type
-            }))
-        except Exception as e:
-            print(f"Erro ao aplicar buff: {e}")
 
     async def update_game_state(self):
-        """Updates the physics and game state"""
-        # Step the physics simulation
         dt = 1/60.0
         self.space.step(dt)
         
-        # Decrement round timer
         self.round_timer -= dt
         if self.round_timer <= 0:
             await self.end_round()
 
-        # Update player positions and velocities
         for player_id, player in self.players.items():
-            # Verificar se o jogador caiu para fora do mapa
-            if player.body.position.y > SCREEN_HEIGHT + 50:
-                # Reposicionar o jogador no ponto de spawn
+            # Verificar limites superior e inferior
+            if player.body.position.y < -50:
                 level = get_level(self.current_level)
                 spawn_point = random.choice(level.spawn_points)
                 player.body.position = (spawn_point['x'], spawn_point['y'])
                 player.body.velocity = (0, 0)
-                player.health -= 10  # Dano por cair
+                player.health -= 10  # Opcional: dano por sair do mapa
+            elif player.body.position.y > SCREEN_HEIGHT + 50:
+                level = get_level(self.current_level)
+                spawn_point = random.choice(level.spawn_points)
+                player.body.position = (spawn_point['x'], spawn_point['y'])
+                player.body.velocity = (0, 0)
+                player.health -= 10
             
-            # Se o jogador está subindo pela plataforma
-            if player.is_climbing and player.climb_target:
-                target_x, target_y = player.climb_target
-                dx = target_x - player.body.position.x
-                dy = target_y - player.body.position.y
-                
-                if abs(dx) < 5 and abs(dy) < 5:
-                    player.body.position = (target_x, target_y)
-                    player.is_climbing = False
-                    player.animation_state = "idle"
-                else:
-                    player.body.velocity = (dx * 5, dy * 5)
-
-            # Limitando a velocidade Y máxima
-            if player.body.velocity.y > MAX_VELOCITY_Y:
-                player.body.velocity = (player.body.velocity.x, MAX_VELOCITY_Y)
-                
-            # Atualizar posição do jogador
+            # Atualizar posição e velocidade
             player.x = player.body.position.x
             player.y = player.body.position.y
             player.velocity_x = player.body.velocity.x
             player.velocity_y = player.body.velocity.y
             
-            # Atualizar timers do jogador
+            # Atualizar timers e buffs
             if player.is_dodging:
                 player.dodge_timer -= dt
                 if player.dodge_timer <= 0:
                     player.is_dodging = False
-            
             if player.buff_timer > 0:
                 player.buff_timer -= dt
                 if player.buff_timer <= 0:
                     player.damage_boost = 1.0
                     player.speed_boost = 1.0
-                    
             if player.is_blinded:
                 player.blind_timer -= dt
                 if player.blind_timer <= 0:
                     player.is_blinded = False
-                    
             if player.invincible_timer > 0:
                 player.invincible_timer -= dt
-                
             if player.has_queijada:
-                # Animar o jogador segurando a queijada
-                # E verificar se ele ganhou o round
                 self.scores[player_id] = self.scores.get(player_id, 0) + 1
                 player.has_queijada = False
                 await self.sio.emit('got_queijada', {'player': player_id})
@@ -659,19 +571,14 @@ class GameServer:
                 t = time.time() * platform.frequency
                 platform.x = platform.initial_x + platform.amplitude * math.sin(t * 2 * math.pi + platform.phase)
                 platform.body.position = (platform.x, platform.y)
-                
-                # Adicionar velocidade à plataforma para que os jogadores se movam com ela
                 platform.body.velocity = (platform.amplitude * math.cos(t * 2 * math.pi + platform.phase) * 2 * math.pi * platform.frequency, 0)
-                
             elif platform.movement_type == 'vertical':
                 t = time.time() * platform.frequency
                 platform.y = platform.initial_y + platform.amplitude * math.sin(t * 2 * math.pi + platform.phase)
                 platform.body.position = (platform.x, platform.y)
-                
-                # Adicionar velocidade à plataforma para que os jogadores se movam com ela
                 platform.body.velocity = (0, platform.amplitude * math.cos(t * 2 * math.pi + platform.phase) * 2 * math.pi * platform.frequency)
 
-        # Atualizar projeteis e remover os que saíram da tela
+        # Atualizar projéteis
         for projectile in self.projectiles[:]:
             if (projectile.body.position.x < 0 or 
                 projectile.body.position.x > SCREEN_WIDTH or 
@@ -683,14 +590,13 @@ class GameServer:
                 projectile.x = projectile.body.position.x
                 projectile.y = projectile.body.position.y
 
-        # Verificar colisões entre jogadores e buffs
+        # Verificar colisões com buffs
         for player in self.players.values():
             for buff in self.buffs[:]:
                 px, py = player.body.position
                 bx, by = buff.body.position
                 distance = math.sqrt((px - bx) ** 2 + (py - by) ** 2)
-                
-                if distance < 30:  # Raio de colisão
+                if distance < 30:
                     if buff.type == "damage":
                         player.damage_boost = 1.5
                         player.buff_timer = 10.0
@@ -700,127 +606,69 @@ class GameServer:
                     elif buff.type == "heal":
                         player.health = min(100, player.health + 25)
                     elif buff.type == "invencivel":
-                        # Glacê Indestrutível - invencibilidade temporária
                         player.invincible_timer = 5.0
                     elif buff.type == "mordida":
-                        # Mordida Certeira - dano aumentado
                         player.damage_boost = 2.0
                         player.buff_timer = 5.0
-                    
                     self.space.remove(buff.body, buff.shape)
                     self.buffs.remove(buff)
                     await self.sio.emit('buff_collected', {'player': player.id, 'buff_type': buff.type})
                     break
-        
+
         # Spawn da Queijada Real
-        if not self.queijada_spawned and self.round_timer <= self.round_time/2:
-            # Escolher uma plataforma para spawnar a queijada
-            # Preferencialmente no meio do nível ou em uma plataforma central
+        if not self.queijada_spawned and self.round_timer <= self.round_time / 2:
             level = get_level(self.current_level)
-            central_platforms = [p for p in self.platforms 
-                               if p.x > SCREEN_WIDTH/4 and p.x < SCREEN_WIDTH*3/4
-                               and p.y < SCREEN_HEIGHT - JUMP_HEIGHT]
-            
-            spawn_platform = None
+            central_platforms = [p for p in self.platforms if p.x > SCREEN_WIDTH / 4 and p.x < SCREEN_WIDTH * 3 / 4 and p.y < SCREEN_HEIGHT - JUMP_HEIGHT]
             if central_platforms:
-                # Escolher uma plataforma central aleatória
                 spawn_platform = random.choice(central_platforms)
                 queijada_x = spawn_platform.x
-                queijada_y = spawn_platform.y - spawn_platform.height/2 - 30  # Acima da plataforma
+                queijada_y = spawn_platform.y - spawn_platform.height / 2 - 30
             else:
-                # Se não houver plataformas centrais, usar uma posição padrão
-                queijada_x = SCREEN_WIDTH/2
+                queijada_x = SCREEN_WIDTH / 2
                 queijada_y = SCREEN_HEIGHT - JUMP_HEIGHT - 50
-            
             self.queijada_position = (queijada_x, queijada_y)
             self.queijada_spawned = True
-            
-            # Criar um buff especial para representar a queijada
             queijada = Buff(type="queijada", x=queijada_x, y=queijada_y)
             queijada.body = pymunk.Body(body_type=pymunk.Body.STATIC)
             queijada.body.position = (queijada_x, queijada_y)
             queijada.shape = pymunk.Circle(queijada.body, 25)
             queijada.shape.collision_type = self.COLLISION_TYPE_BUFF
-            
-            # Adicionar um manipulador de colisão específico para a queijada
-            server_ref = self
-            def queijada_collision(arbiter, space, data):
-                shapes = arbiter.shapes
-                if len(shapes) >= 2 and hasattr(shapes[1], 'body'):
-                    for pid, p in server_ref.players.items():
-                        if p.shape == shapes[1]:
-                            p.has_queijada = True
-                            server_ref.space.remove(queijada.body, queijada.shape)
-                            server_ref.buffs.remove(queijada)
-                            return False
-                return True
-            
-            handler = self.space.add_collision_handler(self.COLLISION_TYPE_BUFF, self.COLLISION_TYPE_PLAYER)
-            handler.begin = queijada_collision
-            
             self.space.add(queijada.body, queijada.shape)
             self.buffs.append(queijada)
-            
             await self.sio.emit('queijada_spawned', {'x': queijada_x, 'y': queijada_y})
-        
-        # Easter Egg: Os Três Mosqueteiros
-        if random.random() < 0.0005:  # 0.05% de chance por atualização (muito raro)
-            # Os três mosqueteiros aparecem e todos ganham um buff
+
+        # Easter Egg
+        if random.random() < 0.0005:
             for player in self.players.values():
                 player.damage_boost = 1.5
                 player.speed_boost = 1.5
                 player.buff_timer = 10.0
             await self.sio.emit('easter_egg', {'event': 'Os Três Mosqueteiros apareceram!'})
-        
-        # Verificar se há empate e acionar o pombo
-        if self.round_timer < 10:  # Últimos 10 segundos do round
+
+        # Verificar empate
+        if self.round_timer < 10:
             highest_score = max(self.scores.values()) if self.scores else 0
             tied_players = [pid for pid, score in self.scores.items() if score == highest_score]
-            
             if len(tied_players) > 1 and highest_score > 0:
                 self.pombo_timer += dt
-                if self.pombo_timer >= 5:  # 5 segundos de empate
-                    # Pombo rouba a queijada
+                if self.pombo_timer >= 5:
                     for buff in self.buffs[:]:
                         if buff.type == "queijada":
                             self.space.remove(buff.body, buff.shape)
                             self.buffs.remove(buff)
-                    
                     await self.sio.emit('pombo_roubou', {'message': 'Um pombo roubou a queijada! Todos perdem!'})
                     await self.end_round()
-                    
-        # Spawn de outros buffs
+
         self.spawn_buffs()
         await self.broadcast_game_state()
 
     async def broadcast_game_state(self):
         try:
             game_state = {
-                'players': {
-                    pid: {
-                        **asdict(player),
-                        'body': None,
-                        'shape': None
-                    }
-                    for pid, player in self.players.items()
-                },
+                'players': {pid: {**asdict(player), 'body': None, 'shape': None} for pid, player in self.players.items()},
                 'weapons': [{'type': w.type, 'x': w.x, 'y': w.y} for w in self.weapons],
-                'platforms': [
-                    {
-                        'x': p.body.position.x,
-                        'y': p.body.position.y,
-                        'width': p.width,
-                        'height': p.height
-                    }
-                    for p in self.platforms
-                ],
-                'projectiles': [
-                    {
-                        'x': p.body.position.x,
-                        'y': p.body.position.y
-                    }
-                    for p in self.projectiles
-                ],
+                'platforms': [{'x': p.body.position.x, 'y': p.body.position.y, 'width': p.width, 'height': p.height} for p in self.platforms],
+                'projectiles': [{'x': p.body.position.x, 'y': p.body.position.y} for p in self.projectiles],
                 'buffs': [{'type': b.type, 'x': b.x, 'y': b.y} for b in self.buffs],
                 'scores': self.scores
             }
@@ -850,65 +698,43 @@ class GameServer:
     async def change_level(self, level_name: str):
         self.load_level(level_name)
         self.current_level = level_name
-        
         level = get_level(level_name)
         for player in self.players.values():
             spawn_point = random.choice(level.spawn_points)
             player.body.position = (spawn_point['x'], spawn_point['y'])
             player.body.velocity = (0, 0)
-        
         for weapon in self.weapons[:]:
             self.space.remove(weapon.body, weapon.shape)
         self.weapons.clear()
-        
         for buff in self.buffs[:]:
             self.space.remove(buff.body, buff.shape)
         self.buffs.clear()
-        
-        await self.sio.emit('level_changed', {
-            'level_name': level_name,
-            'level_title': level.name
-        })
+        await self.sio.emit('level_changed', {'level_name': level_name, 'level_title': level.name})
 
     async def end_round(self):
-        """Finaliza o round atual e prepara o próximo"""
         self.round_count += 1
-        
-        # Verificar se já atingimos o número máximo de rounds
         if self.round_count >= self.max_rounds:
-            # Finalizar o jogo
             winner = max(self.scores.items(), key=lambda x: x[1])[0] if self.scores else None
             if winner:
                 await self.sio.emit('game_over', {'winner': winner, 'scores': self.scores})
                 self.running = False
                 return
-        
-        # Avançar para o próximo nível
         self.current_level_index = (self.current_level_index + 1) % len(self.level_order)
         next_level = self.level_order[self.current_level_index]
-        
-        # Limpar todos os buffs e projéteis
         for buff in self.buffs[:]:
             self.space.remove(buff.body, buff.shape)
         self.buffs.clear()
-        
         for projectile in self.projectiles[:]:
             self.space.remove(projectile.body, projectile.shape)
         self.projectiles.clear()
-        
-        # Carregar o próximo nível
         await self.change_level(next_level)
-        
-        # Resetar os jogadores
         level = get_level(next_level)
         for i, (player_id, player) in enumerate(self.players.items()):
-            # Resetar vida e status
             player.health = 100
             if player.class_type == "Fighter":
                 player.health = 150
             elif player.class_type == "Archer":
                 player.health = 90
-            
             player.damage_boost = 1.0
             player.speed_boost = 1.0
             player.is_blinded = False
@@ -917,24 +743,14 @@ class GameServer:
             player.has_queijada = False
             player.is_climbing = False
             player.is_dodging = False
-            
-            # Reposicionar no novo nível
             spawn_index = i % len(level.spawn_points)
             spawn_point = level.spawn_points[spawn_index]
             player.body.position = (spawn_point['x'], spawn_point['y'])
             player.body.velocity = (0, 0)
-        
-        # Resetar o temporizador e flags
         self.round_timer = self.round_time
         self.queijada_spawned = False
         self.pombo_timer = 0
-        
-        await self.sio.emit('round_change', {
-            'next_level': next_level, 
-            'round': self.round_count, 
-            'max_rounds': self.max_rounds,
-            'scores': self.scores
-        })
+        await self.sio.emit('round_change', {'next_level': next_level, 'round': self.round_count, 'max_rounds': self.max_rounds, 'scores': self.scores})
 
     def run(self, host='0.0.0.0', port=5000):
         async def init_game():
@@ -946,29 +762,22 @@ class GameServer:
                 except socket.error:
                     logger.error(f"Port {port} is already in use")
                     return
-
                 runner = web.AppRunner(self.app)
                 await runner.setup()
                 site = web.TCPSite(runner, host, port)
-                
                 await site.start()
                 logger.info(f"Server running on http://{host}:{port}")
-                
                 self.game_loop_task = asyncio.create_task(self.game_loop())
-                
                 await self.game_loop_task
             except Exception as e:
                 logger.error(f"Server initialization error: {str(e)}")
                 logger.error(traceback.format_exc())
-                
         def signal_handler(signum, frame):
             logger.info("Received shutdown signal")
             if self.running:
                 self.running = False
-                
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
-                
         try:
             asyncio.run(init_game())
         except KeyboardInterrupt:
