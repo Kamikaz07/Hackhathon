@@ -82,6 +82,11 @@ class Server:
             self.clients = []
             self.client_data = [None, None]
             self.running = True
+            self.game_state = {
+                "buffs": [],
+                "current_time": 60 * 60,  # 1 minute in frames
+                "game_started": False
+            }
             
             hostname = socket.gethostname()
             local_ip = socket.gethostbyname(hostname)
@@ -147,19 +152,26 @@ class Server:
                 print("Segundo jogador conectado. Enviando dados para o primeiro jogador.")
                 response = {
                     "name": self.client_data[1].get("name", "Player 2"),
-                    "class": self.client_data[1].get("class", 0)
+                    "class": self.client_data[1].get("class", 0),
+                    "game_state": self.game_state
                 }
             else:
                 print("Enviando dados do primeiro jogador para o segundo jogador.")
                 response = {
                     "name": self.client_data[0].get("name", "Player 1"),
-                    "class": self.client_data[0].get("class", 0)
+                    "class": self.client_data[0].get("class", 0),
+                    "game_state": self.game_state
                 }
             
             if not self.send_data(conn, response):
                 raise Exception("Falha ao enviar dados iniciais")
                 
             print(f"Dados enviados com sucesso para o cliente {client_id}")
+            
+            # If this is the second player, start the game
+            if client_id == 1:
+                self.game_state["game_started"] = True
+                
         except Exception as e:
             print(f"Erro ao inicializar cliente {client_id}: {e}")
             self.client_data[client_id] = None
@@ -170,14 +182,14 @@ class Server:
         
         # Main client loop
         last_update = time.time()
-        update_interval = 1.0 / 30  # 30 FPS network update
+        update_interval = 1.0 / 60  # 60 FPS network update
         
         while self.running:
             try:
                 # Rate limit updates
                 current_time = time.time()
                 if current_time - last_update < update_interval:
-                    time.sleep(0.001)  # Small sleep to prevent CPU hogging
+                    time.sleep(0.001)
                     continue
                 
                 last_update = current_time
@@ -188,21 +200,30 @@ class Server:
                     print(f"Conexão perdida com cliente {client_id}")
                     break
                 
-                # Update client data
+                # Update client data and game state
                 self.client_data[client_id] = data
+                if "buffs" in data:
+                    self.game_state["buffs"] = data["buffs"]
+                if "current_time" in data:
+                    self.game_state["current_time"] = data["current_time"]
                 
                 # Get opponent data
                 other_client_id = 1 if client_id == 0 else 0
                 opponent_data = self.client_data[other_client_id] if self.client_data[other_client_id] is not None else {}
                 
-                # Send only necessary data
+                # Send full game state
                 response = {
                     "x": opponent_data.get("x", 0),
                     "y": opponent_data.get("y", 0),
                     "health": opponent_data.get("health", 100),
                     "attacking": opponent_data.get("attacking", False),
+                    "defending": opponent_data.get("defending", False),
+                    "using_special": opponent_data.get("using_special", False),
                     "direction": opponent_data.get("direction", 1),
-                    "damage_dealt": opponent_data.get("damage_dealt", 0)
+                    "damage_dealt": opponent_data.get("damage_dealt", 0),
+                    "active_buffs": opponent_data.get("active_buffs", []),
+                    "special_cooldown": opponent_data.get("special_cooldown", 0),
+                    "game_state": self.game_state
                 }
                 
                 if not self.send_data(conn, response):

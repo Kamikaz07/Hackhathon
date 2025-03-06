@@ -132,6 +132,16 @@ class Game:
             damage_dealt = 0
             if self.opponent:
                 damage_dealt = max(0, prev_health - self.opponent.health)
+            
+            # Check for collisions with buffs
+            for buff in self.buffs[:]:
+                if buff.collides_with(self.player):
+                    self.player.add_buff(buff)
+                    self.buffs.remove(buff)
+            
+            # Generate new buffs occasionally
+            if random.random() < 0.005 and len(self.buffs) < 5:  # 0.5% chance per frame
+                self.generate_buffs(1)
         
         # Send player data to server
         player_data = {
@@ -139,8 +149,14 @@ class Game:
             "y": self.player.y,
             "health": self.player.health,
             "attacking": self.player.attacking,
+            "defending": self.player.defending,
+            "using_special": self.player.using_special,
             "direction": self.player.direction,
-            "damage_dealt": damage_dealt
+            "damage_dealt": damage_dealt,
+            "active_buffs": [b.to_dict() for b in self.player.active_buffs],
+            "special_cooldown": self.player.special_cooldown,
+            "buffs": [b.to_dict() for b in self.buffs],
+            "current_time": self.current_time
         }
         
         # Send data to server and get opponent data
@@ -158,6 +174,17 @@ class Game:
                 opponent_data.get("name", "Opponent"),
                 is_opponent=True
             )
+            
+            # Get initial game state
+            if "game_state" in opponent_data:
+                game_state = opponent_data["game_state"]
+                self.current_time = game_state.get("current_time", self.current_time)
+                self.game_started = game_state.get("game_started", False)
+                
+                # Sync buffs
+                self.buffs = []
+                for buff_data in game_state.get("buffs", []):
+                    self.buffs.append(Buff.from_dict(buff_data))
         
         # Update opponent with received data
         if self.opponent and opponent_data:
@@ -165,12 +192,31 @@ class Game:
             self.opponent.y = opponent_data.get("y", self.opponent.y)
             self.opponent.health = opponent_data.get("health", self.opponent.health)
             self.opponent.attacking = opponent_data.get("attacking", False)
+            self.opponent.defending = opponent_data.get("defending", False)
+            self.opponent.using_special = opponent_data.get("using_special", False)
             self.opponent.direction = opponent_data.get("direction", self.opponent.direction)
+            self.opponent.special_cooldown = opponent_data.get("special_cooldown", 0)
+            
+            # Update opponent buffs
+            self.opponent.active_buffs = []
+            for buff_data in opponent_data.get("active_buffs", []):
+                self.opponent.active_buffs.append(Buff.from_dict(buff_data))
             
             # Apply damage from opponent
             damage_received = opponent_data.get("damage_dealt", 0)
             if damage_received > 0:
                 self.player.health = max(0, self.player.health - damage_received)
+            
+            # Sync game state
+            if "game_state" in opponent_data:
+                game_state = opponent_data["game_state"]
+                self.current_time = game_state.get("current_time", self.current_time)
+                
+                # Sync buffs if we're not the host
+                if not self.is_host:
+                    self.buffs = []
+                    for buff_data in game_state.get("buffs", []):
+                        self.buffs.append(Buff.from_dict(buff_data))
         
         # Check if either player is defeated
         if self.game_started and (self.player.health <= 0 or (self.opponent and self.opponent.health <= 0)):
