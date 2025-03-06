@@ -13,6 +13,13 @@ class Game:
         self.running = True
         self.font = pygame.font.Font(None, 36)
         self.small_font = pygame.font.Font(None, 24)
+        self.tiny_font = pygame.font.Font(None, 20)  # New font for controls display
+        
+        # Controls guide
+        self.show_controls = True
+        self.controls_alpha = 128  # Semi-transparent
+        self.controls_fade_timer = 600  # 10 seconds before starting to fade
+        self.controls_position = "left"  # Can be "left" or "right"
         
         # Platform setup
         self.platforms = [
@@ -34,7 +41,7 @@ class Game:
         
         # Game settings
         self.fps = 60
-        self.round_time = 60 * 60  # 1 minute per round
+        self.round_time = 360 * 360  # 1 minute per round
         self.current_time = self.round_time
         self.game_over = False
         self.winner = None
@@ -62,10 +69,16 @@ class Game:
                 pygame.quit()
                 sys.exit()
             
-            if self.game_over and event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE and self.game_over:
                     self.running = False
                     return
+                # Toggle controls visibility with Tab
+                elif event.key == pygame.K_TAB:
+                    self.show_controls = not self.show_controls
+                # Switch controls position with C key
+                elif event.key == pygame.K_c:
+                    self.controls_position = "right" if self.controls_position == "left" else "left"
     
     def update(self):
         """Update game state"""
@@ -184,12 +197,6 @@ class Game:
             text = self.font.render(f"Começando em {countdown}...", True, (255, 255, 255))
             text_rect = text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
             self.screen.blit(text, text_rect)
-            
-            # Draw controls
-            controls1 = self.small_font.render("Jogador 1: WASD (movimento) F (ataque) G (defesa) H (especial)", True, (255, 255, 255))
-            controls2 = self.small_font.render("Jogador 2: Setas (movimento) K (ataque) L (defesa) M (especial)", True, (255, 255, 255))
-            self.screen.blit(controls1, (50, 500))
-            self.screen.blit(controls2, (50, 530))
         
         # Draw players
         self.player1.draw(self.screen)
@@ -197,6 +204,10 @@ class Game:
         
         # Draw HUD
         self.draw_hud()
+        
+        # Draw controls guide
+        if self.show_controls:
+            self.draw_controls_guide()
         
         # Draw game over screen if game is over
         if self.game_over:
@@ -244,6 +255,100 @@ class Game:
         instruction = self.small_font.render("Pressione ESC para voltar ao menu", True, (255, 255, 255))
         instruction_rect = instruction.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 50))
         self.screen.blit(instruction, instruction_rect)
+    
+    def draw_controls_guide(self):
+        """Draw the controls guide with new abilities"""
+        # Create semi-transparent overlay for controls
+        controls_surface = pygame.Surface((250, 800))  # Increased height from 400 to 600
+        controls_surface.fill((0, 0, 0))
+        controls_surface.set_alpha(self.controls_alpha)
+        
+        # Calculate positions
+        margin = 10
+        line_height = 18  # Slightly reduced line height
+        y = margin
+        
+        # Helper function to draw text
+        def draw_control_line(text, y_pos, color=(255, 255, 255)):
+            text_surface = self.tiny_font.render(text, True, color)
+            controls_surface.blit(text_surface, (margin, y_pos))
+            return y_pos + line_height
+        
+        # Draw toggle instructions
+        y = draw_control_line("TAB: Mostrar/Ocultar Controles", y, (255, 255, 0))
+        y = draw_control_line("C: Mudar Posição dos Controles", y, (255, 255, 0))
+        y = draw_control_line("", y)  # Spacing
+        
+        # Draw controls for each player
+        for player_num in range(1, 3):
+            player = self.player1 if player_num == 1 else self.player2
+            
+            # Header with player class name
+            class_name = "Cavaleiro" if isinstance(player, Fighter) else "Mago" if isinstance(player, Mage) else "Arqueiro"
+            y = draw_control_line(f"Jogador {player_num} - {class_name}:", y, (255, 215, 0))
+            
+            # Movement
+            controls = {
+                "Movimento": "WASD" if player_num == 1 else "Setas",
+                "Ataque": "F" if player_num == 1 else "K",
+                "Defesa": "G" if player_num == 1 else "L",
+                "Especial": "H" if player_num == 1 else "M"
+            }
+            
+            for action, key in controls.items():
+                y = draw_control_line(f"{action}: {key}", y)
+            
+            # Special abilities based on character class
+            y = draw_control_line("", y)  # Spacing
+            
+            if isinstance(player, Fighter):
+                y = draw_control_line("Habilidades do Cavaleiro:", y, (200, 200, 200))
+                y = draw_control_line("- Segurar Ataque: Golpe Carregado", y)
+                y = draw_control_line("  (Mais dano e knockback)", y, (150, 150, 150))
+                y = draw_control_line("- Defesa + Ataque: Empurrão", y)
+                y = draw_control_line("  (Causa stun no inimigo)", y, (150, 150, 150))
+                y = draw_control_line("- Defesa (timing): Bloqueio Perfeito", y)
+                y = draw_control_line("  (0 dano e ganha stamina)", y, (150, 150, 150))
+                y = draw_control_line("- Especial no ar: Ataque Descendente", y)
+                y = draw_control_line("  (Dano em área)", y, (150, 150, 150))
+                y = draw_control_line("- Especial no chão: Uppercut", y)
+                y = draw_control_line("  (Lança inimigo para cima)", y, (150, 150, 150))
+                y = draw_control_line("- Barra amarela: Stamina", y)
+                y = draw_control_line("  (Regenera ao não usar)", y, (150, 150, 150))
+            
+            elif isinstance(player, Mage):
+                y = draw_control_line("Habilidades do Mago:", y, (100, 100, 255))
+                y = draw_control_line("- Ataque: Projétil de Fogo", y)
+                y = draw_control_line("  (Dano à distância)", y, (75, 75, 200))
+                y = draw_control_line("- Especial: Explosão de Fogo", y)
+                y = draw_control_line("  (Grande dano em área)", y, (75, 75, 200))
+                y = draw_control_line("- Defesa: Teleporte", y)
+                y = draw_control_line("  (Escapa rapidamente)", y, (75, 75, 200))
+                y = draw_control_line("- Segurar Cima: Levitação", y)
+                y = draw_control_line("  (Controle aéreo)", y, (75, 75, 200))
+                y = draw_control_line("- Barra azul: Mana", y)
+                y = draw_control_line("  (Regenera com tempo)", y, (75, 75, 200))
+            
+            elif isinstance(player, Archer):
+                y = draw_control_line("Habilidades do Arqueiro:", y, (100, 255, 100))
+                y = draw_control_line("- Ataque: Combo de 3 Golpes", y)
+                y = draw_control_line("  (Dano crescente)", y, (75, 200, 75))
+                y = draw_control_line("- Ataque + Movimento: Ataque Rápido", y)
+                y = draw_control_line("  (Golpes enquanto corre)", y, (75, 200, 75))
+                y = draw_control_line("- Especial: Dash Attack", y)
+                y = draw_control_line("  (Avanço com dano)", y, (75, 200, 75))
+                y = draw_control_line("- Defesa: Empurrão", y)
+                y = draw_control_line("  (Cria distância)", y, (75, 200, 75))
+                y = draw_control_line("- Pulo Duplo", y)
+                y = draw_control_line("  (Melhor mobilidade)", y, (75, 200, 75))
+                y = draw_control_line("- Velocidade Aumentada", y)
+                y = draw_control_line("  (Mais rápido que outros)", y, (75, 200, 75))
+            
+            y += margin  # Add space between players
+        
+        # Draw the controls surface on the chosen side
+        x_pos = 10 if self.controls_position == "left" else self.screen.get_width() - 260
+        self.screen.blit(controls_surface, (x_pos, 40))  # Moved up to 80 from 200
     
     def run(self):
         """Run the game loop"""
