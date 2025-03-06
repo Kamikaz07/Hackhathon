@@ -100,6 +100,12 @@ class Buff:
 
 class GameServer:
     def __init__(self, level_name="pastelaria"):
+        # Collision types
+        self.COLLISION_TYPE_PLATFORM = 1
+        self.COLLISION_TYPE_PLAYER = 2
+        self.COLLISION_TYPE_PROJECTILE = 3
+        self.COLLISION_TYPE_BUFF = 4
+        
         self.sio = socketio.AsyncServer(cors_allowed_origins='*', async_mode='aiohttp')
         self.app = web.Application()
         self.sio.attach(self.app)
@@ -158,7 +164,7 @@ class GameServer:
             platform.shape = pymunk.Poly.create_box(platform.body, (platform.width, platform.height))
             platform.shape.friction = 1.0
             platform.shape.elasticity = 0.1  # Aumentar elasticidade para evitar que o jogador fique preso
-            platform.shape.collision_type = 1
+            platform.shape.collision_type = self.COLLISION_TYPE_PLATFORM
             
             platform.movement_type = platform_config['movement_type']
             if platform.movement_type != 'static':
@@ -182,41 +188,55 @@ class GameServer:
         player.shape = pymunk.Poly.create_box(player.body, (width, height))
         player.shape.friction = 1.0
         player.shape.elasticity = 0.1
-        player.shape.collision_type = 2
+        player.shape.collision_type = self.COLLISION_TYPE_PLAYER
         
         # Armazenar a referência do servidor para usar em callbacks
         server_ref = self
         
         def pre_solve_collision(arbiter, space, data):
-            shapes = arbiter.shapes
-            platform_shape = shapes[0]
-            player_shape = shapes[1]
-            
-            # Verificar se o jogador está acima da plataforma
-            # (a posição Y menor significa "mais acima" na tela)
-            platform_top = platform_shape.body.position.y - platform_shape.bb.height/2
-            player_bottom = player_shape.body.position.y + player_shape.bb.height/2
-            
-            # Se o jogador está subindo ou caindo
-            player_velocity_y = player_shape.body.velocity.y
-            
-            # Se o jogador está subindo ou está acima da plataforma, desabilita a colisão
-            if player_velocity_y < 0 or player_bottom < platform_top + 5:
+            try:
+                platform_shape = arbiter.shapes[0]
+                player_shape = arbiter.shapes[1]
+                
+                # Usar pontos de contato para determinar a colisão
+                if not arbiter.contact_point_set.points:
+                    return False
+                
+                # Obter o ponto de contato médio
+                contact_point = arbiter.contact_point_set.points[0].point_a
+                
+                # Calcular as posições relativas
+                platform_pos = platform_shape.body.position
+                player_pos = player_shape.body.position
+                
+                # Se o jogador está subindo (velocidade Y negativa)
+                if player_shape.body.velocity.y < 0:
+                    return False
+                
+                # Se o jogador está acima da plataforma
+                if player_pos.y < platform_pos.y:
+                    for p_id, p in server_ref.players.items():
+                        if p.shape == player_shape:
+                            p.can_jump = True
+                    return True
+                
+                return True
+                
+            except Exception as e:
+                print(f"Erro na colisão: {e}")
                 return False
-            
-            for p_id, p in server_ref.players.items():
-                if p.shape == player_shape:
-                    p.can_jump = True
-            
-            return True
         
         def separate_collision(arbiter, space, data):
-            shapes = arbiter.shapes
-            if shapes[1] == player.shape:
-                player.can_jump = False
-            return True
+            try:
+                shapes = arbiter.shapes
+                if shapes[1] == player.shape:
+                    player.can_jump = False
+                return True
+            except Exception as e:
+                print(f"Erro na separação: {e}")
+                return True
         
-        handler = self.space.add_collision_handler(1, 2)
+        handler = self.space.add_collision_handler(self.COLLISION_TYPE_PLATFORM, self.COLLISION_TYPE_PLAYER)
         handler.pre_solve = pre_solve_collision
         handler.separate = separate_collision
         
@@ -368,23 +388,29 @@ class GameServer:
                 projectile.body.position = (projectile.x, projectile.y)
                 projectile.body.velocity = (projectile.velocity_x, projectile.velocity_y)
                 projectile.shape = pymunk.Circle(projectile.body, 8)
-                projectile.shape.collision_type = 3
+                projectile.shape.collision_type = self.COLLISION_TYPE_PROJECTILE
                 
                 server_ref = self
                 
                 def projectile_collision(arbiter, space, data):
-                    shapes = arbiter.shapes
-                    if len(shapes) >= 2 and hasattr(shapes[1], 'body'):
-                        for pid, player in server_ref.players.items():
-                            if player.shape == shapes[1] and player.id != attacker.id and not player.is_dodging:
-                                player.is_blinded = True
-                                player.blind_timer = 3.0
-                                server_ref.space.remove(projectile.body, projectile.shape)
-                                server_ref.projectiles.remove(projectile)
-                                return False
+                    try:
+                        if len(arbiter.shapes) >= 2:
+                            projectile_shape = arbiter.shapes[0]
+                            target_shape = arbiter.shapes[1]
+                            
+                            for pid, player in server_ref.players.items():
+                                if player.shape == target_shape and player.id != attacker.id and not player.is_dodging:
+                                    player.is_blinded = True
+                                    player.blind_timer = 3.0
+                                    if projectile in server_ref.projectiles:
+                                        server_ref.space.remove(projectile.body, projectile.shape)
+                                        server_ref.projectiles.remove(projectile)
+                                    return False
+                    except Exception as e:
+                        print(f"Erro na colisão do projétil: {e}")
                     return True
                 
-                handler = self.space.add_collision_handler(3, 2)
+                handler = self.space.add_collision_handler(self.COLLISION_TYPE_PROJECTILE, self.COLLISION_TYPE_PLAYER)
                 handler.begin = projectile_collision
                 self.space.add(projectile.body, projectile.shape)
                 self.projectiles.append(projectile)
@@ -404,7 +430,7 @@ class GameServer:
                 projectile.body.position = (projectile.x, projectile.y)
                 projectile.body.velocity = (projectile.velocity_x, projectile.velocity_y)
                 projectile.shape = pymunk.Circle(projectile.body, 5)
-                projectile.shape.collision_type = 3
+                projectile.shape.collision_type = self.COLLISION_TYPE_PROJECTILE
                 
                 server_ref = self
                 
@@ -438,7 +464,7 @@ class GameServer:
                                     return False
                     return True
                 
-                handler = self.space.add_collision_handler(3, 2)
+                handler = self.space.add_collision_handler(self.COLLISION_TYPE_PROJECTILE, self.COLLISION_TYPE_PLAYER)
                 handler.begin = steal_buff_collision
                 self.space.add(projectile.body, projectile.shape)
                 self.projectiles.append(projectile)
@@ -458,7 +484,7 @@ class GameServer:
                 projectile.body.position = (projectile.x, projectile.y)
                 projectile.body.velocity = (projectile.velocity_x, projectile.velocity_y)
                 projectile.shape = pymunk.Circle(projectile.body, 5)
-                projectile.shape.collision_type = 3
+                projectile.shape.collision_type = self.COLLISION_TYPE_PROJECTILE
                 self.space.add(projectile.body, projectile.shape)
                 self.projectiles.append(projectile)
                 await self.sio.emit('shoot', {'attacker': attacker.id, 'direction': direction})
@@ -501,9 +527,58 @@ class GameServer:
             buff.body = pymunk.Body(body_type=pymunk.Body.STATIC)
             buff.body.position = (x, y)
             buff.shape = pymunk.Circle(buff.body, 15)
-            buff.shape.collision_type = 4
+            buff.shape.collision_type = self.COLLISION_TYPE_BUFF
+            
+            server_ref = self
+            
+            def buff_collision(arbiter, space, data):
+                try:
+                    if len(arbiter.shapes) >= 2:
+                        buff_shape = arbiter.shapes[0]
+                        player_shape = arbiter.shapes[1]
+                        
+                        for pid, player in server_ref.players.items():
+                            if player.shape == player_shape:
+                                if buff in server_ref.buffs:
+                                    server_ref.apply_buff_effect(player, buff)
+                                    server_ref.space.remove(buff.body, buff.shape)
+                                    server_ref.buffs.remove(buff)
+                                return False
+                except Exception as e:
+                    print(f"Erro na colisão do buff: {e}")
+                return True
+            
+            handler = self.space.add_collision_handler(self.COLLISION_TYPE_BUFF, self.COLLISION_TYPE_PLAYER)
+            handler.begin = buff_collision
+            
             self.space.add(buff.body, buff.shape)
             self.buffs.append(buff)
+            
+    def apply_buff_effect(self, player: Player, buff: Buff):
+        """Apply buff effects to a player"""
+        try:
+            if buff.type == "damage":
+                player.damage_boost = 1.5
+                player.buff_timer = 10.0
+            elif buff.type == "speed":
+                player.speed_boost = 1.5
+                player.buff_timer = 10.0
+            elif buff.type == "heal":
+                player.health = min(100, player.health + 25)
+            elif buff.type == "invencivel":
+                player.invincible_timer = 5.0
+            elif buff.type == "mordida":
+                player.damage_boost = 2.0
+                player.buff_timer = 5.0
+            elif buff.type == "queijada":
+                player.has_queijada = True
+            
+            asyncio.create_task(self.sio.emit('buff_collected', {
+                'player': player.id,
+                'buff_type': buff.type
+            }))
+        except Exception as e:
+            print(f"Erro ao aplicar buff: {e}")
 
     async def update_game_state(self):
         """Updates the physics and game state"""
@@ -665,7 +740,7 @@ class GameServer:
             queijada.body = pymunk.Body(body_type=pymunk.Body.STATIC)
             queijada.body.position = (queijada_x, queijada_y)
             queijada.shape = pymunk.Circle(queijada.body, 25)
-            queijada.shape.collision_type = 4
+            queijada.shape.collision_type = self.COLLISION_TYPE_BUFF
             
             # Adicionar um manipulador de colisão específico para a queijada
             server_ref = self
@@ -680,7 +755,7 @@ class GameServer:
                             return False
                 return True
             
-            handler = self.space.add_collision_handler(4, 2)
+            handler = self.space.add_collision_handler(self.COLLISION_TYPE_BUFF, self.COLLISION_TYPE_PLAYER)
             handler.begin = queijada_collision
             
             self.space.add(queijada.body, queijada.shape)
