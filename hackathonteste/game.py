@@ -1,7 +1,8 @@
 import pygame
 import sys
 import random
-from characters import Fighter, Mage, Archer
+import math
+from characters import Character, Fighter, Mage, Archer
 from buff import Buff
 
 class Game:
@@ -301,6 +302,20 @@ class Game:
         # Draw MP/Stamina bar
         mp_bar_scaled = pygame.transform.scale(self.mp_bar, (200, 10))  # Redimensionado para 200x10
         self.screen.blit(mp_bar_scaled, (bar_x, mp_y))
+        
+        # Desenha nível atual de mana/stamina
+        mp_level = 0
+        if isinstance(player, Mage):
+            mp_level = (player.mana / player.max_mana) * 200
+            mp_color = (0, 100, 255)  # Azul para mana
+        elif isinstance(player, Fighter):
+            mp_level = (player.stamina / player.max_stamina) * 200
+            mp_color = (255, 255, 0)  # Amarelo para stamina
+        else:
+            mp_level = 0  # Para outros personagens
+        
+        if mp_level > 0:
+            pygame.draw.rect(self.screen, mp_color, (bar_x, mp_y, mp_level, 10))
         
         # Draw hearts for lives
         heart_start_x = x + (10 if flip else 10)

@@ -771,10 +771,14 @@ class Mage(Character):
         self.fire_cooldown_max = 45  # 0.75 seconds
         self.fire_extra_cooldown = 0
         self.fire_extra_cooldown_max = 120  # 2 seconds
-        self.levitate_power = -0.4  # Slower fall rate
-        self.levitate_mana_cost = 1
+        
+        # Atributos para custo de mana dos ataques
         self.fire_mana_cost = 20
         self.fire_extra_mana_cost = 40
+        
+        # Substituindo levitação por pulo contínuo
+        self.continuous_jump_power = -0.7  # Impulso mais leve para cima por frame
+        self.continuous_jump_mana_cost = 0.5  # Reduzido o custo de mana por frame
         
         # Combo system for spells
         self.spell_combo = []
@@ -806,11 +810,15 @@ class Mage(Character):
         else:
             self.spell_combo = []
         
-        # Enhanced movement with levitation
-        if controls["up"] and not self.on_ground and self.mana >= self.levitate_mana_cost:
-            self.velocity_y = max(self.velocity_y + self.levitate_power, -4)  # Cap upward speed
-            self.mana -= self.levitate_mana_cost
-            self.state = "high_jump"
+        # Pulo contínuo enquanto mantém o botão pressionado e tem mana
+        if controls["up"] and not self.on_ground and self.mana >= self.continuous_jump_mana_cost:
+            # Aplicando um impulso para cima enquanto o botão é pressionado
+            self.velocity_y += self.continuous_jump_power
+            # Limitando a velocidade máxima de subida
+            self.velocity_y = max(self.velocity_y, -8)
+            # Consumindo mana
+            self.mana -= self.continuous_jump_mana_cost
+            self.state = "jump"
             self.add_visual_effect("levitate", 5)
         
         # Basic attack (Fire spell)
