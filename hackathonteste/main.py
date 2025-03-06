@@ -96,53 +96,64 @@ def start_game():
     """Start the actual game"""
     global player_name, selected_class, is_host, ip_address, port, connection_status, error_message
     
-    # Select a random level
-    level = random.randint(0, 4)
-    
-    # If we're hosting, start the server
-    if is_host:
-        if not start_server():
+    try:
+        # Select a random level
+        level = random.randint(0, 4)
+        
+        # If we're hosting, start the server
+        if is_host:
+            if not start_server():
+                return
+        
+        # Create network connection
+        connection_status = "Conectando ao servidor..."
+        network = Network(ip_address, port)
+        
+        if not network.connected:
+            connection_status = "Erro de conexão"
+            error_message = "Não foi possível conectar ao servidor. Verifique o IP e a porta."
             return
-    
-    # Create network connection
-    connection_status = "Conectando ao servidor..."
-    network = Network(ip_address, port)
-    
-    if not network.connected:
-        connection_status = "Erro de conexão"
-        error_message = "Não foi possível conectar ao servidor. Verifique o IP e a porta."
-        return
-    
-    connection_status = "Conectado! Enviando dados iniciais..."
-    
-    # Send initial data
-    initial_send = network.send({
-        'name': player_name,
-        'class': selected_class
-    })
-    
-    if initial_send is None:
-        connection_status = "Erro de conexão"
-        error_message = "Falha ao enviar dados iniciais."
-        return
-    
-    # Get initial game state
-    connection_status = "Aguardando outro jogador..."
-    initial_data = network.receive()
-    if not initial_data:
-        connection_status = "Erro de conexão"
-        error_message = "Não foi possível receber dados do servidor."
-        return
-    
-    connection_status = "Iniciando jogo..."
-    
-    # Create and start the game
-    game = Game(screen, network, selected_class, player_name, level, level_backgrounds[level])
-    game.run()
-    
-    # After game ends, reset connection status
-    connection_status = "Não conectado"
-    error_message = ""
+        
+        connection_status = "Conectado! Enviando dados iniciais..."
+        
+        # Send initial data
+        initial_data = {
+            'name': player_name,
+            'class': selected_class
+        }
+        
+        # Send data and get response
+        response = network.send(initial_data)
+        
+        if response is None:
+            connection_status = "Erro de conexão"
+            error_message = "Falha ao enviar dados iniciais."
+            return
+        
+        # Create and start the game
+        connection_status = "Iniciando jogo..."
+        game = Game(screen, network, selected_class, player_name, level, level_backgrounds[level])
+        
+        # Main game loop
+        while True:
+            game.handle_events()
+            game.update()
+            game.draw()
+            
+            if not game.running:
+                break
+            
+            pygame.display.flip()
+            clock.tick(FPS)
+        
+        # After game ends, reset connection status
+        connection_status = "Não conectado"
+        error_message = ""
+        
+    except Exception as e:
+        connection_status = "Erro"
+        error_message = f"Erro ao iniciar jogo: {str(e)}"
+        print(f"Erro ao iniciar jogo: {str(e)}")
 
 def create_main_menu():
     """Create the main menu"""
