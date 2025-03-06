@@ -7,34 +7,13 @@ import time
 class Network:
     def __init__(self, host, port):
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client.settimeout(30)  # Increased timeout to 30 seconds
+        self.client.settimeout(30)
         self.host = host
         self.port = port
         self.addr = (self.host, self.port)
         self.connected = self.connect()
-        self.last_activity = time.time()
-        
-        # Start keep-alive thread
-        if self.connected:
-            self.keep_alive_thread = threading.Thread(target=self._keep_alive)
-            self.keep_alive_thread.daemon = True
-            self.keep_alive_thread.start()
-    
-    def _keep_alive(self):
-        """Send keep-alive packets periodically"""
-        while self.connected:
-            if time.time() - self.last_activity > 10:  # If no activity for 10 seconds
-                try:
-                    # Send empty keep-alive packet
-                    self.client.send(json.dumps({"keep_alive": True}).encode())
-                    time.sleep(5)  # Wait 5 seconds before next keep-alive
-                except:
-                    self.connected = False
-                    break
-            time.sleep(1)
     
     def connect(self):
-        """Connect to the server"""
         try:
             print(f"Tentando conectar ao servidor {self.host}:{self.port}...")
             self.client.connect(self.addr)
@@ -50,14 +29,25 @@ class Network:
             return None
             
         try:
-            # Convert data to JSON
+            # Send length first
             json_data = json.dumps(data)
-            # Send data
+            length = len(json_data)
+            self.client.send(str(length).zfill(8).encode())  # Fixed length header
+            
+            # Send actual data
             self.client.send(json_data.encode())
             
-            # Receive response
-            response = self.client.recv(4096).decode()
-            # Parse JSON response
+            # Receive response length
+            length = int(self.client.recv(8).decode())
+            
+            # Receive actual response
+            response = ""
+            while len(response) < length:
+                chunk = self.client.recv(min(4096, length - len(response))).decode()
+                if not chunk:
+                    break
+                response += chunk
+                
             return json.loads(response)
         except socket.timeout:
             print("Timeout ao enviar/receber dados - tentando reconectar...")
@@ -77,9 +67,16 @@ class Network:
             return None
             
         try:
-            data = self.client.recv(4096).decode()
-            if not data:
-                return None
+            # Receive length first
+            length = int(self.client.recv(8).decode())
+            
+            # Receive actual data
+            data = ""
+            while len(data) < length:
+                chunk = self.client.recv(min(4096, length - len(data))).decode()
+                if not chunk:
+                    return None
+                data += chunk
                 
             return json.loads(data)
         except socket.timeout:
@@ -95,7 +92,6 @@ class Network:
             return None
     
     def close(self):
-        """Close the connection"""
         try:
             self.client.close()
             print("Conexão fechada")
@@ -107,17 +103,16 @@ class Server:
     def __init__(self, port):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.host = ''  # Empty string means listen on all available interfaces
+        self.host = ''
         self.port = port
         
         try:
             self.server.bind((self.host, self.port))
-            self.server.listen(2)  # Allow up to 2 connections
+            self.server.listen(2)
             self.clients = []
             self.client_data = [None, None]
             self.running = True
             
-            # Get local IP for easier connection
             hostname = socket.gethostname()
             local_ip = socket.gethostbyname(hostname)
             print(f"Servidor iniciado na porta {port}")
@@ -127,14 +122,39 @@ class Server:
             print(f"Erro ao iniciar servidor: {e}")
             self.running = False
     
+    def send_data(self, conn, data):
+        """Helper function to send data with length prefix"""
+        try:
+            json_data = json.dumps(data)
+            length = len(json_data)
+            conn.send(str(length).zfill(8).encode())
+            conn.send(json_data.encode())
+            return True
+        except:
+            return False
+    
+    def receive_data(self, conn):
+        """Helper function to receive data with length prefix"""
+        try:
+            length = int(conn.recv(8).decode())
+            data = ""
+            while len(data) < length:
+                chunk = conn.recv(min(4096, length - len(data))).decode()
+                if not chunk:
+                    return None
+                data += chunk
+            return json.loads(data)
+        except:
+            return None
+    
     def handle_client(self, conn, client_id):
         """Handle client connection"""
         print(f"Cliente {client_id} conectado")
-        conn.settimeout(30)  # Set timeout to 30 seconds
+        conn.settimeout(30)
         
         # Get initial data from client
         try:
-            data = conn.recv(4096).decode()
+            data = self.receive_data(conn)
             if not data:
                 print(f"Dados iniciais inválidos do cliente {client_id}")
                 self.client_data[client_id] = None
@@ -142,12 +162,11 @@ class Server:
                 conn.close()
                 return
                 
-            self.client_data[client_id] = json.loads(data)
+            self.client_data[client_id] = data
             print(f"Dados recebidos do cliente {client_id}: {self.client_data[client_id]}")
             
             # Send initial data back to client
             if client_id == 0:
-                # First player has to wait for second player
                 print("Aguardando segundo jogador se conectar...")
                 while self.client_data[1] is None and self.running:
                     time.sleep(0.1)
@@ -161,14 +180,15 @@ class Server:
                     "class": self.client_data[1].get("class", 0)
                 }
             else:
-                # Second player gets first player's data immediately
                 print("Enviando dados do primeiro jogador para o segundo jogador.")
                 response = {
                     "name": self.client_data[0].get("name", "Player 1"),
                     "class": self.client_data[0].get("class", 0)
                 }
             
-            conn.send(json.dumps(response).encode())
+            if not self.send_data(conn, response):
+                raise Exception("Falha ao enviar dados iniciais")
+                
             print(f"Dados enviados com sucesso para o cliente {client_id}")
         except Exception as e:
             print(f"Erro ao inicializar cliente {client_id}: {e}")
@@ -181,27 +201,21 @@ class Server:
         # Main client loop
         while self.running:
             try:
-                # Receive data from client
-                data = conn.recv(4096).decode()
+                data = self.receive_data(conn)
                 if not data:
                     print(f"Conexão perdida com cliente {client_id}")
                     break
                 
-                # Update client data
-                self.client_data[client_id] = json.loads(data)
+                self.client_data[client_id] = data
                 
-                # Send other client's data
                 other_client_id = 1 if client_id == 0 else 0
-                if self.client_data[other_client_id] is not None:
-                    conn.send(json.dumps(self.client_data[other_client_id]).encode())
-                else:
-                    # If other client hasn't sent data yet, send empty data
-                    conn.send(json.dumps({}).encode())
+                response = self.client_data[other_client_id] if self.client_data[other_client_id] is not None else {}
+                
+                if not self.send_data(conn, response):
+                    break
+                    
             except socket.timeout:
-                # On timeout, just send empty data to keep connection alive
-                try:
-                    conn.send(json.dumps({}).encode())
-                except:
+                if not self.send_data(conn, {}):
                     break
             except Exception as e:
                 print(f"Erro na comunicação com cliente {client_id}: {e}")
