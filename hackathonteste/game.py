@@ -27,6 +27,7 @@ class Game:
         self.buffs = []  # Available buffs on the field
         self.game_started = False
         self.start_delay = 180  # 3 seconds delay before game starts
+        self.is_host = True  # Default to True, will be set to False when second player connects
         
         # Generate initial buffs
         self.generate_buffs(3)
@@ -133,15 +134,17 @@ class Game:
             if self.opponent:
                 damage_dealt = max(0, prev_health - self.opponent.health)
             
-            # Check for collisions with buffs
-            for buff in self.buffs[:]:
-                if buff.collides_with(self.player):
-                    self.player.add_buff(buff)
-                    self.buffs.remove(buff)
-            
-            # Generate new buffs occasionally
-            if random.random() < 0.005 and len(self.buffs) < 5:  # 0.5% chance per frame
-                self.generate_buffs(1)
+            # Check for collisions with buffs and generate new ones only if host
+            if self.is_host:
+                # Check for collisions with buffs
+                for buff in self.buffs[:]:
+                    if buff.collides_with(self.player):
+                        self.player.add_buff(buff)
+                        self.buffs.remove(buff)
+                
+                # Generate new buffs occasionally
+                if random.random() < 0.005 and len(self.buffs) < 5:  # 0.5% chance per frame
+                    self.generate_buffs(1)
         
         # Send player data to server
         player_data = {
@@ -155,7 +158,7 @@ class Game:
             "damage_dealt": damage_dealt,
             "active_buffs": [b.to_dict() for b in self.player.active_buffs],
             "special_cooldown": self.player.special_cooldown,
-            "buffs": [b.to_dict() for b in self.buffs],
+            "buffs": [b.to_dict() for b in self.buffs] if self.is_host else [],
             "current_time": self.current_time
         }
         
@@ -180,6 +183,7 @@ class Game:
                 game_state = opponent_data["game_state"]
                 self.current_time = game_state.get("current_time", self.current_time)
                 self.game_started = game_state.get("game_started", False)
+                self.is_host = False  # If we're receiving game state, we're not the host
                 
                 # Sync buffs
                 self.buffs = []
