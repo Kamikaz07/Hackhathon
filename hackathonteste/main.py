@@ -190,21 +190,51 @@ class Menu:
         self.screen.blit(overlay, (0, 0))
         
         # Calculate dynamic spacing
-        vertical_space = SCREEN_HEIGHT - 150  # Reduced space reserve
-        section_height = vertical_space // 4  # Divide space in 4 sections for better distribution
+        vertical_space = SCREEN_HEIGHT - 150
         
         # Draw title at the top
         title = self.title_font.render("Escolha seu Guerreiro", True, WHITE)
-        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 60))  # Fixed position for title
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 60))
         self.screen.blit(title, title_rect)
         
-        # Draw player selections in their own sections with adjusted spacing
-        player1_y = section_height + 80  # Moved up
-        player2_y = section_height * 2 + 80  # More space between players
+        # Calculate player sections
+        player1_y = 180  # Fixed position for better control
+        player2_y = 480  # Fixed position with good separation
         
         # Draw player selections
         self.player1_buttons = self.draw_class_selection(1, player1_y, self.player1_class)
         self.player2_buttons = self.draw_class_selection(2, player2_y, self.player2_class)
+        
+        # Calculate the actual space needed for each player section (preview + button + description)
+        player_section_height = 120 + 40 + 60  # preview_size + button_height + extra_space
+        
+        # Calculate the divider position to be exactly between the bottom of player 1's section and top of player 2's section
+        player1_bottom = player1_y + player_section_height
+        player2_top = player2_y - 145  # Subtract the title spacing
+        divider_y = (player1_bottom + player2_top) // 2
+        
+        divider_width = SCREEN_WIDTH * 0.7
+        divider_x = (SCREEN_WIDTH - divider_width) // 2
+        
+        # Draw decorative divider
+        pygame.draw.line(self.screen, (255, 215, 0), 
+                        (divider_x, divider_y), 
+                        (divider_x + divider_width, divider_y), 
+                        2)  # Golden line
+        
+        # Add decorative elements to the divider
+        circle_radius = 4
+        for x in range(int(divider_x), int(divider_x + divider_width), 100):
+            pygame.draw.circle(self.screen, (255, 215, 0), (x, divider_y), circle_radius)
+        
+        # Draw "VS" text in the middle of the divider
+        vs_font = pygame.font.Font(None, 60)
+        vs_text = vs_font.render("VS", True, (255, 215, 0))
+        vs_rect = vs_text.get_rect(center=(SCREEN_WIDTH // 2, divider_y))
+        # Draw shadow for VS text
+        vs_shadow = vs_font.render("VS", True, (100, 84, 0))
+        self.screen.blit(vs_shadow, (vs_rect.x + 2, vs_rect.y + 2))
+        self.screen.blit(vs_text, vs_rect)
         
         # Draw start button at the bottom
         self.start_button = self.draw_button(
@@ -212,38 +242,31 @@ class Menu:
             SCREEN_WIDTH // 2 - 150,
             SCREEN_HEIGHT - 80,
             300, 50,
-            (255, 215, 0),  # Golden color
+            (255, 215, 0),
             self.start_button.collidepoint(pygame.mouse.get_pos()) if hasattr(self, 'start_button') else False
         )
     
     def draw_class_selection(self, player_num, y_pos, current_class):
         """Draw class selection for a player with icons and descriptions"""
         # Calculate dynamic sizes and spacing
-        content_width = SCREEN_WIDTH * 0.7  # Reduced from 0.8 to 0.7
+        content_width = SCREEN_WIDTH * 0.7
         margin_x = (SCREEN_WIDTH - content_width) // 2
         
-        # Calculate button and spacing dimensions based on content width
-        button_width = int(content_width * 0.15)  # Reduced from 0.2 to 0.15
-        button_height = 40  # Fixed height instead of proportional
+        # Calculate button and spacing dimensions
+        button_width = int(content_width * 0.25)
+        button_height = 40
         spacing = (content_width - (button_width * 3)) // 4
-        
-        # Player title with golden trim
-        title = self.font.render(f"Jogador {player_num}", True, (255, 215, 0))
-        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, y_pos - 30))  # Reduced spacing
-        self.screen.blit(title, title_rect)
         
         buttons = []
         classes = ["Cavaleiro", "Mago", "Arqueiro"]
         colors = [(200, 50, 50), (50, 50, 200), (50, 200, 50)]
         
         # Calculate preview image size
-        preview_size = 140  # Fixed size instead of proportional
+        preview_size = 120  # Slightly smaller preview size
         
         for i, (class_name, color) in enumerate(zip(classes, colors)):
-            # Calculate position for this character
             x_pos = margin_x + spacing + (i * (button_width + spacing))
             
-            # Highlight selected class
             if i == current_class:
                 color = tuple(min(c + 100, 255) for c in color)
             
@@ -257,9 +280,21 @@ class Menu:
             if i == current_class:
                 border_rect = icon_rect.inflate(8, 8)
                 pygame.draw.rect(self.screen, (255, 215, 0), border_rect, 4)
+                
+                # Draw player indicator (P1/P2) above the selected character
+                player_text = self.font.render(f"P{player_num}", True, (255, 215, 0))
+                # Add a black outline/shadow for better visibility
+                player_shadow = self.font.render(f"P{player_num}", True, (0, 0, 0))
+                text_rect = player_text.get_rect(center=(x_pos + button_width//2, y_pos - preview_size//2 - 20))
+                
+                # Draw shadow/outline
+                for dx, dy in [(-2, -2), (-2, 2), (2, -2), (2, 2)]:
+                    self.screen.blit(player_shadow, (text_rect.x + dx, text_rect.y + dy))
+                # Draw main text
+                self.screen.blit(player_text, text_rect)
             
             # Draw button below preview
-            button_y = y_pos + preview_size//2 + 10  # Reduced spacing
+            button_y = y_pos + preview_size//2 + 10
             button = self.draw_button(
                 class_name,
                 x_pos,
@@ -272,7 +307,7 @@ class Menu:
         
         # Draw class description centered below buttons
         desc = self.small_font.render(self.class_descriptions[current_class], True, WHITE)
-        desc_rect = desc.get_rect(center=(SCREEN_WIDTH // 2, y_pos + preview_size//2 + button_height + 40))
+        desc_rect = desc.get_rect(center=(SCREEN_WIDTH // 2, y_pos + preview_size//2 + button_height + 30))
         self.screen.blit(desc, desc_rect)
         
         return buttons
