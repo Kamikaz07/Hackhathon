@@ -96,6 +96,7 @@ class Server:
         except Exception as e:
             print(f"Erro ao iniciar servidor: {e}")
             self.running = False
+            self.isrunning = True
     
     def send_data(self, conn, data):
         """Helper function to send data with length prefix"""
@@ -143,7 +144,7 @@ class Server:
             # Send initial data back to client
             if client_id == 0:
                 print("Aguardando segundo jogador se conectar...")
-                while self.client_data[1] is None and self.running:
+                while self.client_data[1] is None and self.isrunning:
                     time.sleep(0.1)
                 
                 if not self.running:
@@ -154,6 +155,7 @@ class Server:
                     "name": self.client_data[1].get("name", "Player 2"),
                     "class": self.client_data[1].get("class", 0),
                     "game_state": self.game_state
+                    
                 }
             else:
                 print("Enviando dados do primeiro jogador para o segundo jogador.")
@@ -173,6 +175,7 @@ class Server:
                 self.game_state["game_started"] = True
                 
         except Exception as e:
+            
             print(f"Erro ao inicializar cliente {client_id}: {e}")
             self.client_data[client_id] = None
             if conn in self.clients:

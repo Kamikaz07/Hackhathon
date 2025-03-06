@@ -1,6 +1,37 @@
 import pygame
 import random
 import math
+import os
+
+class Animation:
+    def __init__(self, folder_path):
+        self.frames = []
+        self.current_frame = 0
+        self.animation_speed = 0.2
+        self.animation_timer = 0
+        
+        # Load all frames from the folder
+        if os.path.exists(folder_path):
+            for file in sorted(os.listdir(folder_path)):
+                if file.endswith('.png'):
+                    image_path = os.path.join(folder_path, file)
+                    image = pygame.image.load(image_path).convert_alpha()
+                    self.frames.append(image)
+    
+    def update(self, dt):
+        if not self.frames:
+            return None
+            
+        self.animation_timer += dt
+        if self.animation_timer >= self.animation_speed:
+            self.animation_timer = 0
+            self.current_frame = (self.current_frame + 1) % len(self.frames)
+        
+        return self.frames[self.current_frame]
+    
+    def reset(self):
+        self.current_frame = 0
+        self.animation_timer = 0
 
 class Character:
     def __init__(self, x, y, name, is_player2=False):
@@ -10,20 +41,28 @@ class Character:
         self.is_player2 = is_player2
         self.width = 50
         self.height = 50
+        self.rect = pygame.Rect(x, y, self.width, self.height)
         self.speed = 5
-        self.health = 200
+        self.health = 0  # Damage percentage starts at 0
+        self.max_health = 300  # Maximum percentage reduced
+        self.base_knockback = 2  # Reduced base knockback
+        self.knockback_growth = 0.05  # Reduced knockback growth
         self.attack_power = 10
         self.defense = 5
         self.attack_range = 60
         
         # Physics
-        self.velocity_y = 0
         self.velocity_x = 0
+        self.velocity_y = 0
         self.gravity = 0.8
         self.jump_force = -15
-        self.can_jump = True
-        self.jumps_left = 2  # Double jump
         self.on_ground = False
+        self.jumps_left = 2
+        self.max_fall_speed = 12
+        self.ground_friction = 0.85
+        self.air_resistance = 0.95
+        self.ground_snap_distance = 5  # Nova variável para snap ao chão
+        self.last_ground_y = y  # Nova variável para rastrear última posição no chão
         
         # Combat
         self.special_cooldown = 0
@@ -35,7 +74,6 @@ class Character:
         self.attack_cooldown = 0
         self.attack_cooldown_max = 20  # Faster attacks
         self.direction = -1 if is_player2 else 1
-        self.active_buffs = []
         self.color = self.get_color()
         self.attack_hitbox = pygame.Rect(0, 0, 0, 0)
         
@@ -50,15 +88,30 @@ class Character:
         # Visual representation
         self.sprite = pygame.Surface((self.width, self.height))
         self.sprite.fill(self.color)
+        
+        # Animation states
+        self.state = "idle"
+        self.animations = {}
+        self.load_animations()
+        self.facing_right = not is_player2
+        self.animation_timer = 0
     
     def get_color(self):
         """Get base color for the character"""
         return (200, 200, 200)  # Default gray color for base character
     
     def apply_knockback(self, direction, power):
-        """Apply knockback when hit"""
-        knockback_x = direction * (power * 0.5)
-        knockback_y = -power * 0.3
+        """Apply knockback based on percentage"""
+        # Calculate knockback based on percentage
+        # More gradual knockback increase
+        knockback_multiplier = 1 + (self.health * self.knockback_growth)
+        base_power = self.base_knockback + (power * 0.2)  # Reduced power multiplier
+        
+        # Cap maximum knockback
+        max_knockback = 20
+        knockback_x = direction * min(base_power * knockback_multiplier, max_knockback)
+        knockback_y = -min(base_power * knockback_multiplier * 0.5, max_knockback * 0.5)
+        
         self.velocity_x = knockback_x
         self.velocity_y = knockback_y
 
@@ -90,245 +143,216 @@ class Character:
         if abs(self.velocity_x) < 0.1:
             self.velocity_x = 0
 
-    def update_local(self, controls, opponent, buffs):
+    def update_local(self, controls, opponent, buffs, platforms):
         """Update character with local controls"""
-        # Update physics first
-        self.update_physics()
+        # Handle movement
+        moving = False
+        if controls["left"]:
+            self.velocity_x = max(self.velocity_x - 1, -self.speed)  # Aceleração gradual
+            self.direction = -1
+            moving = True
+        elif controls["right"]:
+            self.velocity_x = min(self.velocity_x + 1, self.speed)  # Aceleração gradual
+            self.direction = 1
+            moving = True
         
-        if not self.attacking and not self.using_special and not self.dodging:
-            # Movement
-            if controls["left"]:
-                self.velocity_x = -self.get_speed()
-                self.direction = -1
-            if controls["right"]:
-                self.velocity_x = self.get_speed()
-                self.direction = 1
+        # Aplicar atrito apropriado
+        if self.on_ground:
+            if not moving:
+                self.velocity_x *= self.ground_friction  # Mais atrito no chão quando parado
+            else:
+                self.velocity_x *= 0.95  # Menos atrito quando movendo
+        else:
+            self.velocity_x *= self.air_resistance  # Menos atrito no ar
+        
+        # Movimento horizontal primeiro
+        self.x += self.velocity_x
+        self.rect.x = self.x
+        
+        # Movimento vertical e colisão com plataforma
+        was_on_ground = self.on_ground
+        self.on_ground = False
+        
+        # Se estava no chão no frame anterior, primeiro tenta manter no chão
+        if was_on_ground:
+            for platform in platforms:
+                if (self.rect.bottom <= platform.top + self.ground_snap_distance and 
+                    self.rect.bottom >= platform.top - self.ground_snap_distance and
+                    self.rect.centerx >= platform.left and 
+                    self.rect.centerx <= platform.right):
+                    self.rect.bottom = platform.top
+                    self.y = self.rect.y
+                    self.velocity_y = 0
+                    self.on_ground = True
+                    self.last_ground_y = self.y
+                    break
+        
+        # Se não está no chão, aplica gravidade e movimento vertical
+        if not self.on_ground:
+            # Aplica gravidade
+            self.velocity_y += self.gravity
+            self.velocity_y = min(self.velocity_y, self.max_fall_speed)
             
-            # Jumping
-            if controls["up"] and self.jumps_left > 0:
-                self.velocity_y = self.jump_force
-                self.jumps_left -= 1
+            # Move verticalmente
+            self.y += self.velocity_y
+            self.rect.y = self.y
+            
+            # Checa colisão com plataformas
+            for platform in platforms:
+                if self.rect.colliderect(platform):
+                    if self.velocity_y > 0:  # Caindo
+                        prev_bottom = self.rect.bottom - self.velocity_y
+                        if prev_bottom <= platform.top + 2:  # Margem reduzida
+                            self.rect.bottom = platform.top
+                            self.y = self.rect.y
+                            self.velocity_y = 0
+                            self.on_ground = True
+                            self.last_ground_y = self.y
+                            self.jumps_left = 2
+                            break
         
-        # Dodge
-        if self.dodge_cooldown > 0:
-            self.dodge_cooldown -= 1
+        # Atualiza posição final
+        self.x = self.rect.x
+        self.y = self.rect.y
         
-        if controls["defend"] and not self.dodging and self.dodge_cooldown == 0:
-            self.dodging = True
-            self.dodge_cooldown = self.dodge_cooldown_max
-            # Determine dodge direction
-            if controls["left"]: self.dodge_direction = -1
-            elif controls["right"]: self.dodge_direction = 1
-            else: self.dodge_direction = self.direction
+        # Limpa velocidades muito pequenas para evitar deslizamento
+        if abs(self.velocity_x) < 0.1:
+            self.velocity_x = 0
         
-        if self.dodging:
-            self.dodge_duration -= 1
-            self.velocity_x = self.dodge_direction * self.dodge_speed
-            if self.dodge_duration <= 0:
-                self.dodging = False
-                self.dodge_duration = 15
-                self.velocity_x = 0
+        # Se estiver no chão, garante que a velocidade vertical é 0
+        if self.on_ground:
+            self.velocity_y = 0
+            self.jumps_left = 2
         
-        # Update attack cooldown
-        if self.attack_cooldown > 0:
-            self.attack_cooldown -= 1
-        
-        # Attack
-        if controls["attack"] and not self.attacking and not self.using_special and not self.dodging and self.attack_cooldown == 0:
+        # Update attack state
+        if controls["attack"] and not self.attacking:
             self.attacking = True
-            self.attack_frame = 10
-            self.attack_cooldown = self.attack_cooldown_max
-            
-            # Create attack hitbox based on direction and state
-            attack_width = 80
-            attack_height = 60
-            
-            # Different attack hitboxes for ground and air
-            if not self.on_ground:
-                # Aerial attack has different hitbox
-                attack_width = 70
-                attack_height = 70
-            
-            if self.direction == -1:  # Facing left
-                self.attack_hitbox = pygame.Rect(self.x - attack_width, self.y, attack_width, attack_height)
-            else:  # Facing right
-                self.attack_hitbox = pygame.Rect(self.x + self.width, self.y, attack_width, attack_height)
+            self.attack_frame = 0
+            # Apply knockback to opponent if in range
+            if self.rect.colliderect(opponent.rect):
+                damage = self.attack_power
+                opponent.take_damage(damage)
+                # Calculate knockback based on opponent's damage percentage
+                knockback_power = self.base_knockback * (1 + opponent.health * 0.01)
+                knockback_x = self.direction * knockback_power
+                knockback_y = -knockback_power * 0.5
+                opponent.velocity_x = knockback_x
+                opponent.velocity_y = knockback_y
         
         if self.attacking:
-            self.attack_frame -= 1
-            
-            # Check for hit during the attack animation
-            if opponent and self.attack_hitbox.colliderect(pygame.Rect(opponent.x, opponent.y, opponent.width, opponent.height)):
-                damage = self.calculate_attack_damage()
-                if opponent.dodging:
-                    damage = 0
-                elif opponent.defending:
-                    damage = max(0, damage - opponent.defense)
-                
-                if damage > 0:
-                    # Apply knockback
-                    knockback_power = damage * 1.5
-                    opponent.apply_knockback(self.direction, knockback_power)
-                    opponent.take_damage(damage)
-            
-            # End attack animation
-            if self.attack_frame <= 0:
+            self.attack_frame += 1
+            if self.attack_frame >= self.attack_cooldown_max:
                 self.attacking = False
-                self.attack_hitbox = pygame.Rect(0, 0, 0, 0)
         
-        # Special ability
-        if controls["special"] and not self.attacking and not self.dodging and self.special_cooldown == 0:
+        # Update special attack state
+        if controls["special"] and not self.using_special and self.special_cooldown <= 0:
             self.using_special = True
-            self.special_ability(opponent)
+            self.special_frame = 0
             self.special_cooldown = self.special_cooldown_max
+            # Apply special attack effects
+            if self.rect.colliderect(opponent.rect):
+                damage = self.special_ability(opponent)
+                opponent.take_damage(damage)
+                # Calculate knockback based on opponent's damage percentage
+                knockback_power = self.base_knockback * 2 * (1 + opponent.health * 0.01)
+                knockback_x = self.direction * knockback_power
+                knockback_y = -knockback_power * 0.5
+                opponent.velocity_x = knockback_x
+                opponent.velocity_y = knockback_y
         
-        # Update special cooldown
+        if self.using_special:
+            self.special_frame += 1
+            if self.special_frame >= self.special_cooldown_max:
+                self.using_special = False
+        
         if self.special_cooldown > 0:
             self.special_cooldown -= 1
         
-        # Update buffs
-        self.update_buffs()
+        # Update defense state
+        self.defending = controls["defend"]
     
     def draw(self, screen):
-        """Draw the character"""
-        # Base character
-        sprite = pygame.Surface((self.width, self.height))
-        sprite.fill(self.color)
+        """Draw the character with animations"""
+        # Update animation state
+        self.update_animation_state()
         
-        # Add visual indication for state
+        # Get current animation frame
+        current_animation = self.animations.get(self.state)
+        if current_animation:
+            frame = current_animation.update(1/60)  # Assuming 60 FPS
+            if frame:
+                # Flip the frame based on direction
+                if self.direction == -1:  # Moving/facing left
+                    frame = pygame.transform.flip(frame, True, False)
+                
+                # Scale the frame if needed
+                scaled_frame = pygame.transform.scale(frame, (self.width, self.height))
+                screen.blit(scaled_frame, (self.x, self.y))
+        
+        # Draw attack hitbox if attacking
         if self.attacking:
-            # Draw attack animation
-            attack_color = (255, 255, 0)
-            if self.direction == -1:  # Facing left
-                pygame.draw.rect(screen, attack_color, self.attack_hitbox, 2)
-            else:  # Facing right
-                pygame.draw.rect(screen, attack_color, self.attack_hitbox, 2)
+            pygame.draw.rect(screen, (255, 255, 0), self.attack_hitbox, 2)
         
-        if self.dodging:
-            # Add dodge effect
-            sprite.set_alpha(128)
-        
-        if self.using_special:
-            special_indicator = pygame.Surface((30, 10))
-            special_indicator.fill((255, 0, 255))
-            sprite.blit(special_indicator, (10, 10))
-        
-        # Draw buffs indicators
-        y_offset = 20
-        for buff in self.active_buffs:
-            buff_indicator = pygame.Surface((10, 10))
-            
-            if buff.buff_type == "attack":
-                buff_indicator.fill((255, 0, 0))
-            elif buff.buff_type == "defense":
-                buff_indicator.fill((0, 0, 255))
-            elif buff.buff_type == "speed":
-                buff_indicator.fill((0, 255, 0))
-            
-            sprite.blit(buff_indicator, (0, y_offset))
-            y_offset += 15
-        
-        # Draw health bar
-        health_bar_width = self.width
-        health_bar_height = 5
-        health_percentage = self.health / 200
-        
-        pygame.draw.rect(screen, (255, 0, 0), (self.x, self.y - 10, health_bar_width, health_bar_height))
-        pygame.draw.rect(screen, (0, 255, 0), (self.x, self.y - 10, health_bar_width * health_percentage, health_bar_height))
+        # Draw percentage instead of health bar
+        font = pygame.font.Font(None, 36)
+        percentage_text = f"{int(self.health)}%"
+        percentage_color = (255, 
+                          max(0, 255 - (self.health * 1.5)), 
+                          max(0, 255 - (self.health * 1.5)))
+        percentage_surface = font.render(percentage_text, True, percentage_color)
+        screen.blit(percentage_surface, (self.x, self.y - 30))
         
         # Draw name
-        font = pygame.font.Font(None, 24)
-        name_surface = font.render(self.name, True, (255, 255, 255))
-        screen.blit(name_surface, (self.x, self.y - 30))
-        
-        # Draw character sprite
-        screen.blit(sprite, (self.x, self.y))
-    
-    def get_speed(self):
-        """Get current speed, including buffs"""
-        speed_multiplier = 1.0
-        for buff in self.active_buffs:
-            if buff.buff_type == "speed":
-                speed_multiplier = 1.5
-                break
-        return self.speed * speed_multiplier
+        name_font = pygame.font.Font(None, 24)
+        name_surface = name_font.render(self.name, True, (255, 255, 255))
+        screen.blit(name_surface, (self.x, self.y - 50))
     
     def take_damage(self, damage):
-        """Take damage, reduced if defending"""
+        """Take damage, increasing percentage"""
         if self.defending:
-            # Apply defense buff if any
-            defense_multiplier = 1.0
-            for buff in self.active_buffs:
-                if buff.buff_type == "defense":
-                    defense_multiplier = 1.5
-                    break
-            
-            actual_defense = self.defense * defense_multiplier
-            damage = max(0, damage - actual_defense)
+            damage *= 0.5  # Take half damage when defending
         
-        self.health = max(0, self.health - damage)
-    
-    def calculate_attack_damage(self):
-        """Calculate attack damage, including buffs"""
-        # Apply attack buff if any
-        attack_multiplier = 1.0
-        for buff in self.active_buffs:
-            if buff.buff_type == "attack":
-                attack_multiplier = 1.5
-                break
-        
-        return self.attack_power * attack_multiplier
-    
-    def is_in_range(self, opponent, range_value):
-        """Check if opponent is in range"""
-        if not opponent:
-            return False
-        
-        distance = math.sqrt((self.x - opponent.x) ** 2 + (self.y - opponent.y) ** 2)
-        return distance <= range_value
-    
-    def add_buff(self, buff):
-        """Add a buff to the character"""
-        # Check if we already have this type of buff
-        for existing_buff in self.active_buffs:
-            if existing_buff.buff_type == buff.buff_type:
-                # Extend the duration
-                existing_buff.duration += buff.duration
-                return
-        
-        # Otherwise, add the new buff
-        if buff.buff_type == "health":
-            # Health buff immediately adds 20 health
-            self.health = min(200, self.health + 20)
-        else:
-            # Other buffs are added to active_buffs
-            self.active_buffs.append(buff)
-    
-    def update_buffs(self):
-        """Update buff durations and remove expired buffs"""
-        for buff in self.active_buffs[:]:
-            buff.duration -= 1
-            if buff.duration <= 0:
-                self.active_buffs.remove(buff)
+        self.health = min(self.max_health, self.health + damage)
     
     def special_ability(self, opponent):
         """Special ability, overridden by subclasses"""
+        return self.attack_power * 2  # Default special damage
+    
+    def load_animations(self):
+        """Load character animations - to be overridden by subclasses"""
         pass
+    
+    def update_animation_state(self):
+        """Update the current animation state based on character's actions"""
+        new_state = "idle"
+        
+        if self.attacking:
+            new_state = "attack"
+        elif self.using_special:
+            new_state = "attack_extra"
+        elif abs(self.velocity_x) > 0.1:
+            new_state = "walk"
+        elif not self.on_ground:
+            new_state = "jump"
+        
+        if self.state != new_state:
+            self.state = new_state
+            if self.state in self.animations:
+                self.animations[self.state].reset()
 
 
 class Fighter(Character):
     def __init__(self, x, y, name, is_player2=False):
         super().__init__(x, y, name, is_player2)
-        self.health = 250
-        self.attack_power = 15
+        self.health = 0  # Start at 0%
+        self.attack_power = 5  # Base damage
         self.defense = 8
         self.attack_range = 70
-        self.special_damage = 30
+        self.special_damage = 10
         self.speed = 4
-        
-        # Visual representation
-        self.sprite = pygame.Surface((self.width, self.height))
-        self.sprite.fill(self.color)
+        self.width = 64
+        self.height = 64
+        self.base_knockback = 3  # Slightly higher base knockback
     
     def get_color(self):
         """Fighter's unique color"""
@@ -358,21 +382,33 @@ class Fighter(Character):
                 opponent.take_damage(damage)
             
             self.using_special = False
+    
+    def load_animations(self):
+        base_path = "hackathonteste/imagens_characters/PNG/Knight"
+        self.animations = {
+            "idle": Animation(os.path.join(base_path, "Idle")),
+            "walk": Animation(os.path.join(base_path, "Walk")),
+            "attack": Animation(os.path.join(base_path, "Walk_Attack")),
+            "attack": Animation(os.path.join(base_path, "Attack")),
+            "attack_extra": Animation(os.path.join(base_path, "Attack_Extra")),
+            "jump": Animation(os.path.join(base_path, "Jump")),
+            "hurt": Animation(os.path.join(base_path, "Hurt")),
+            "run": Animation(os.path.join(base_path, "Run"))
+        }
 
 
 class Mage(Character):
     def __init__(self, x, y, name, is_player2=False):
         super().__init__(x, y, name, is_player2)
-        self.health = 180
-        self.attack_power = 12
+        self.health = 0  # Start at 0%
+        self.attack_power = 4  # Base damage
         self.defense = 4
         self.attack_range = 150
-        self.special_damage = 35
+        self.special_damage = 8
         self.speed = 5
-        
-        # Visual representation
-        self.sprite = pygame.Surface((self.width, self.height))
-        self.sprite.fill(self.color)
+        self.width = 64
+        self.height = 64
+        self.base_knockback = 2  # Medium base knockback
     
     def get_color(self):
         """Mage's unique color"""
@@ -401,21 +437,32 @@ class Mage(Character):
                 opponent.take_damage(damage)
             
             self.using_special = False
+    
+    def load_animations(self):
+        base_path = "hackathonteste/imagens_characters/PNG/Mage"
+        self.animations = {
+            "idle": Animation(os.path.join(base_path, "Idle")),
+            "walk": Animation(os.path.join(base_path, "Walk")),
+            "attack": Animation(os.path.join(base_path, "Attack")),
+            "attack_extra": Animation(os.path.join(base_path, "Attack_Extra")),
+            "jump": Animation(os.path.join(base_path, "Jump")),
+            "hurt": Animation(os.path.join(base_path, "Hurt")),
+            "run": Animation(os.path.join(base_path, "Run"))
+        }
 
 
 class Archer(Character):
     def __init__(self, x, y, name, is_player2=False):
         super().__init__(x, y, name, is_player2)
-        self.health = 200
-        self.attack_power = 8
+        self.health = 0  # Start at 0%
+        self.attack_power = 3  # Base damage
         self.defense = 5
         self.attack_range = 200
-        self.special_damage = 25
+        self.special_damage = 6
         self.speed = 6
-        
-        # Visual representation
-        self.sprite = pygame.Surface((self.width, self.height))
-        self.sprite.fill(self.color)
+        self.width = 64
+        self.height = 64
+        self.base_knockback = 1.5  # Lower base knockback
     
     def get_color(self):
         """Archer's unique color"""
@@ -444,4 +491,16 @@ class Archer(Character):
                 opponent.velocity_y = -12
                 opponent.take_damage(damage)
             
-            self.using_special = False 
+            self.using_special = False
+    
+    def load_animations(self):
+        base_path = "hackathonteste/imagens_characters/PNG/Rogue"
+        self.animations = {
+            "idle": Animation(os.path.join(base_path, "Idle")),
+            "walk": Animation(os.path.join(base_path, "Walk")),
+            "attack": Animation(os.path.join(base_path, "Attack")),
+            "attack_extra": Animation(os.path.join(base_path, "Attack_Extra")),
+            "jump": Animation(os.path.join(base_path, "Jump")),
+            "hurt": Animation(os.path.join(base_path, "Hurt")),
+            "run": Animation(os.path.join(base_path, "Run"))
+        } 
