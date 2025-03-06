@@ -7,11 +7,31 @@ import time
 class Network:
     def __init__(self, host, port):
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client.settimeout(5)  # 5 second timeout for connections
+        self.client.settimeout(30)  # Increased timeout to 30 seconds
         self.host = host
         self.port = port
         self.addr = (self.host, self.port)
         self.connected = self.connect()
+        self.last_activity = time.time()
+        
+        # Start keep-alive thread
+        if self.connected:
+            self.keep_alive_thread = threading.Thread(target=self._keep_alive)
+            self.keep_alive_thread.daemon = True
+            self.keep_alive_thread.start()
+    
+    def _keep_alive(self):
+        """Send keep-alive packets periodically"""
+        while self.connected:
+            if time.time() - self.last_activity > 10:  # If no activity for 10 seconds
+                try:
+                    # Send empty keep-alive packet
+                    self.client.send(json.dumps({"keep_alive": True}).encode())
+                    time.sleep(5)  # Wait 5 seconds before next keep-alive
+                except:
+                    self.connected = False
+                    break
+            time.sleep(1)
     
     def connect(self):
         """Connect to the server"""
@@ -30,14 +50,31 @@ class Network:
             return None
             
         try:
+            # Update last activity time
+            self.last_activity = time.time()
+            
             # Convert data to JSON
             json_data = json.dumps(data)
             # Send data
             self.client.send(json_data.encode())
+            
+            # Clear receive buffer before receiving new data
+            self.client.settimeout(0.1)
+            try:
+                while True:
+                    self.client.recv(1024)
+            except socket.timeout:
+                pass
+            self.client.settimeout(30)
+            
             # Receive response
             response = self.client.recv(4096).decode()
             # Parse JSON response
             return json.loads(response)
+        except socket.timeout:
+            print("Timeout ao enviar/receber dados - tentando reconectar...")
+            self.connected = self.connect()
+            return None
         except Exception as e:
             print(f"Erro de rede ao enviar/receber dados: {e}")
             self.connected = False
@@ -49,8 +86,23 @@ class Network:
             return None
             
         try:
+            # Update last activity time
+            self.last_activity = time.time()
+            
             data = self.client.recv(4096).decode()
-            return json.loads(data)
+            if not data:
+                return None
+                
+            parsed_data = json.loads(data)
+            # Ignore keep-alive packets
+            if isinstance(parsed_data, dict) and parsed_data.get("keep_alive"):
+                return self.receive()  # Try receiving again
+                
+            return parsed_data
+        except socket.timeout:
+            print("Timeout ao receber dados - tentando reconectar...")
+            self.connected = self.connect()
+            return None
         except Exception as e:
             print(f"Erro ao receber dados: {e}")
             self.connected = False
@@ -69,6 +121,7 @@ class Server:
     def __init__(self, port):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         self.host = ''  # Empty string means listen on all available interfaces
         self.port = port
         
@@ -77,6 +130,7 @@ class Server:
             self.server.listen(2)  # Allow up to 2 connections
             self.clients = []
             self.client_data = [None, None]
+            self.client_last_activity = [0, 0]
             self.running = True
             
             # Get local IP for easier connection
@@ -92,6 +146,7 @@ class Server:
     def handle_client(self, conn, client_id):
         """Handle client connection"""
         print(f"Cliente {client_id} conectado")
+        conn.settimeout(30)  # Set timeout to 30 seconds
         
         # Get initial data from client
         try:
@@ -103,7 +158,15 @@ class Server:
                 conn.close()
                 return
                 
-            self.client_data[client_id] = json.loads(data)
+            parsed_data = json.loads(data)
+            # Handle keep-alive packets
+            if isinstance(parsed_data, dict) and parsed_data.get("keep_alive"):
+                self.client_last_activity[client_id] = time.time()
+                conn.send(json.dumps({"keep_alive": True}).encode())
+                return
+                
+            self.client_data[client_id] = parsed_data
+            self.client_last_activity[client_id] = time.time()
             print(f"Dados recebidos do cliente {client_id}: {self.client_data[client_id]}")
             
             # Send initial data back to client
@@ -139,6 +202,21 @@ class Server:
             conn.close()
             return
         
+        # Start monitoring thread for client timeout
+        def monitor_timeout():
+            while self.running and conn in self.clients:
+                if time.time() - self.client_last_activity[client_id] > 60:  # 60 seconds timeout
+                    print(f"Cliente {client_id} timeout - desconectando")
+                    if conn in self.clients:
+                        self.clients.remove(conn)
+                    conn.close()
+                    break
+                time.sleep(5)
+        
+        timeout_thread = threading.Thread(target=monitor_timeout)
+        timeout_thread.daemon = True
+        timeout_thread.start()
+        
         # Main client loop
         while self.running:
             try:
@@ -148,8 +226,16 @@ class Server:
                     print(f"Conexão perdida com cliente {client_id}")
                     break
                 
-                # Update client data
-                self.client_data[client_id] = json.loads(data)
+                parsed_data = json.loads(data)
+                # Handle keep-alive packets
+                if isinstance(parsed_data, dict) and parsed_data.get("keep_alive"):
+                    self.client_last_activity[client_id] = time.time()
+                    conn.send(json.dumps({"keep_alive": True}).encode())
+                    continue
+                
+                # Update client data and activity time
+                self.client_data[client_id] = parsed_data
+                self.client_last_activity[client_id] = time.time()
                 
                 # Send other client's data
                 other_client_id = 1 if client_id == 0 else 0
@@ -158,6 +244,9 @@ class Server:
                 else:
                     # If other client hasn't sent data yet, send empty data
                     conn.send(json.dumps({}).encode())
+            except socket.timeout:
+                # Just continue on timeout, the monitor thread will handle disconnection if needed
+                continue
             except Exception as e:
                 print(f"Erro na comunicação com cliente {client_id}: {e}")
                 break
