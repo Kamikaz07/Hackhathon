@@ -32,7 +32,7 @@ class Network:
             # Send length first
             json_data = json.dumps(data)
             length = len(json_data)
-            self.client.send(str(length).zfill(8).encode())  # Fixed length header
+            self.client.send(str(length).zfill(8).encode())
             
             # Send actual data
             self.client.send(json_data.encode())
@@ -58,36 +58,6 @@ class Network:
             return None
         except Exception as e:
             print(f"Erro de rede ao enviar/receber dados: {e}")
-            self.connected = False
-            return None
-    
-    def receive(self):
-        """Receive data from the server"""
-        if not self.connected:
-            return None
-            
-        try:
-            # Receive length first
-            length = int(self.client.recv(8).decode())
-            
-            # Receive actual data
-            data = ""
-            while len(data) < length:
-                chunk = self.client.recv(min(4096, length - len(data))).decode()
-                if not chunk:
-                    return None
-                data += chunk
-                
-            return json.loads(data)
-        except socket.timeout:
-            print("Timeout ao receber dados - tentando reconectar...")
-            self.client.close()
-            self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.client.settimeout(30)
-            self.connected = self.connect()
-            return None
-        except Exception as e:
-            print(f"Erro ao receber dados: {e}")
             self.connected = False
             return None
     
@@ -199,24 +169,47 @@ class Server:
             return
         
         # Main client loop
+        last_update = time.time()
+        update_interval = 1.0 / 30  # 30 FPS network update
+        
         while self.running:
             try:
+                # Rate limit updates
+                current_time = time.time()
+                if current_time - last_update < update_interval:
+                    time.sleep(0.001)  # Small sleep to prevent CPU hogging
+                    continue
+                
+                last_update = current_time
+                
+                # Receive data from client
                 data = self.receive_data(conn)
                 if not data:
                     print(f"Conexão perdida com cliente {client_id}")
                     break
                 
+                # Update client data
                 self.client_data[client_id] = data
                 
+                # Get opponent data
                 other_client_id = 1 if client_id == 0 else 0
-                response = self.client_data[other_client_id] if self.client_data[other_client_id] is not None else {}
+                opponent_data = self.client_data[other_client_id] if self.client_data[other_client_id] is not None else {}
+                
+                # Send only necessary data
+                response = {
+                    "x": opponent_data.get("x", 0),
+                    "y": opponent_data.get("y", 0),
+                    "health": opponent_data.get("health", 100),
+                    "attacking": opponent_data.get("attacking", False),
+                    "direction": opponent_data.get("direction", 1),
+                    "damage_dealt": opponent_data.get("damage_dealt", 0)
+                }
                 
                 if not self.send_data(conn, response):
                     break
                     
             except socket.timeout:
-                if not self.send_data(conn, {}):
-                    break
+                continue
             except Exception as e:
                 print(f"Erro na comunicação com cliente {client_id}: {e}")
                 break

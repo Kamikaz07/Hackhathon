@@ -122,7 +122,16 @@ class Game:
         
         # Update player
         if self.game_started:
+            # Store previous health to detect damage
+            prev_health = self.player.health
+            
+            # Update player state
             self.player.update(keys, self.opponent, self.buffs)
+            
+            # Calculate damage dealt this frame
+            damage_dealt = 0
+            if self.opponent:
+                damage_dealt = max(0, prev_health - self.opponent.health)
         
         # Send player data to server
         player_data = {
@@ -130,10 +139,8 @@ class Game:
             "y": self.player.y,
             "health": self.player.health,
             "attacking": self.player.attacking,
-            "defending": self.player.defending,
-            "using_special": self.player.using_special,
             "direction": self.player.direction,
-            "buffs": [b.to_dict() for b in self.player.active_buffs]
+            "damage_dealt": damage_dealt
         }
         
         # Send data to server and get opponent data
@@ -158,25 +165,12 @@ class Game:
             self.opponent.y = opponent_data.get("y", self.opponent.y)
             self.opponent.health = opponent_data.get("health", self.opponent.health)
             self.opponent.attacking = opponent_data.get("attacking", False)
-            self.opponent.defending = opponent_data.get("defending", False)
-            self.opponent.using_special = opponent_data.get("using_special", False)
             self.opponent.direction = opponent_data.get("direction", self.opponent.direction)
             
-            # Update opponent buffs
-            self.opponent.active_buffs = []
-            for buff_data in opponent_data.get("buffs", []):
-                self.opponent.active_buffs.append(Buff.from_dict(buff_data))
-        
-        # Check for collisions with buffs
-        if self.game_started:
-            for buff in self.buffs[:]:
-                if buff.collides_with(self.player):
-                    self.player.add_buff(buff)
-                    self.buffs.remove(buff)
-        
-        # Generate new buffs occasionally
-        if self.game_started and random.random() < 0.005 and len(self.buffs) < 5:  # 0.5% chance per frame
-            self.generate_buffs(1)
+            # Apply damage from opponent
+            damage_received = opponent_data.get("damage_dealt", 0)
+            if damage_received > 0:
+                self.player.health = max(0, self.player.health - damage_received)
         
         # Check if either player is defeated
         if self.game_started and (self.player.health <= 0 or (self.opponent and self.opponent.health <= 0)):
