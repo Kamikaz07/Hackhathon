@@ -21,10 +21,11 @@ class Character:
         self.defending = False
         self.using_special = False
         self.attack_frame = 0
-        self.attack_frame_max = 30
+        self.attack_frame_max = 15  # Faster attack animation
         self.direction = 1 if is_opponent else -1  # -1 = left, 1 = right
         self.active_buffs = []
         self.color = (255, 0, 0)  # Default color, overridden by subclasses
+        self.attack_hitbox = pygame.Rect(0, 0, 0, 0)  # Attack hitbox
         
         # Visual representation
         self.sprite = pygame.Surface((self.width, self.height))
@@ -67,19 +68,27 @@ class Character:
         if keys[pygame.K_SPACE] and not self.attacking and not self.defending and not self.using_special:
             self.attacking = True
             self.attack_frame = 0
+            
+            # Create attack hitbox based on direction
+            attack_width = 80
+            attack_height = 60
+            if self.direction == -1:  # Facing left
+                self.attack_hitbox = pygame.Rect(self.x - attack_width, self.y, attack_width, attack_height)
+            else:  # Facing right
+                self.attack_hitbox = pygame.Rect(self.x + self.width, self.y, attack_width, attack_height)
         
         if self.attacking:
             self.attack_frame += 1
             
-            # Check for hit at the middle of the animation
-            if self.attack_frame == self.attack_frame_max // 2 and opponent:
-                if self.is_in_range(opponent, 100):  # Attack range
-                    damage = self.calculate_attack_damage()
-                    opponent.take_damage(damage)
+            # Check for hit during the attack animation
+            if opponent and self.attack_hitbox.colliderect(pygame.Rect(opponent.x, opponent.y, opponent.width, opponent.height)):
+                damage = self.calculate_attack_damage()
+                opponent.take_damage(damage)
             
             # End attack animation
             if self.attack_frame >= self.attack_frame_max:
                 self.attacking = False
+                self.attack_hitbox = pygame.Rect(0, 0, 0, 0)
     
     def defend(self, keys):
         """Perform defense"""
@@ -183,9 +192,12 @@ class Character:
         
         # Add visual indication for state
         if self.attacking:
-            attack_indicator = pygame.Surface((30, 10))
-            attack_indicator.fill((255, 255, 0))
-            sprite.blit(attack_indicator, (10, 0))
+            # Draw attack animation
+            attack_color = (255, 255, 0)
+            if self.direction == -1:  # Facing left
+                pygame.draw.rect(screen, attack_color, (self.x - 80, self.y, 80, 60), 2)
+            else:  # Facing right
+                pygame.draw.rect(screen, attack_color, (self.x + self.width, self.y, 80, 60), 2)
         
         if self.defending:
             pygame.draw.rect(sprite, (0, 0, 255), (0, 0, self.width, self.height), 3)
@@ -231,7 +243,7 @@ class Fighter(Character):
     def __init__(self, x, y, name, is_opponent=False):
         super().__init__(x, y, name, is_opponent)
         self.color = (220, 100, 100)  # Reddish
-        self.attack_power = 15  # Stronger attack
+        self.attack_power = 25  # Stronger attack
         self.defense_power = 8  # Better defense
         self.speed = 4  # Slightly slower
         
@@ -241,9 +253,18 @@ class Fighter(Character):
     
     def special_ability(self, opponent):
         """Fighter's special ability: Strong blow that does double damage"""
-        if opponent and self.is_in_range(opponent, 120):
-            damage = self.calculate_attack_damage() * 2
-            opponent.take_damage(damage)
+        if opponent:
+            # Create large attack hitbox
+            attack_width = 120
+            attack_height = 100
+            if self.direction == -1:  # Facing left
+                hitbox = pygame.Rect(self.x - attack_width, self.y - 20, attack_width, attack_height)
+            else:  # Facing right
+                hitbox = pygame.Rect(self.x + self.width, self.y - 20, attack_width, attack_height)
+            
+            if hitbox.colliderect(pygame.Rect(opponent.x, opponent.y, opponent.width, opponent.height)):
+                damage = self.calculate_attack_damage() * 2
+                opponent.take_damage(damage)
             self.using_special = False
 
 
@@ -251,55 +272,56 @@ class Mage(Character):
     def __init__(self, x, y, name, is_opponent=False):
         super().__init__(x, y, name, is_opponent)
         self.color = (100, 100, 220)  # Bluish
-        self.attack_power = 8  # Weaker attack
-        self.defense_power = 5  # Weaker defense
-        self.speed = 5  # Average speed
-        self.special_range = 200  # Longer range for special ability
+        self.attack_power = 15  # Medium attack
+        self.defense_power = 5  # Low defense
+        self.speed = 5  # Medium speed
         
         # Visual representation
         self.sprite = pygame.Surface((self.width, self.height))
         self.sprite.fill(self.color)
     
     def special_ability(self, opponent):
-        """Mage's special ability: Blind opponent temporarily (slow them down)"""
-        if opponent and self.is_in_range(opponent, self.special_range):
-            # Create a speed debuff for the opponent
-            opponent.speed = 2  # Slow down the opponent
+        """Mage's special ability: Freeze opponent"""
+        if opponent:
+            # Create large attack hitbox
+            attack_width = 150
+            attack_height = 150
+            if self.direction == -1:  # Facing left
+                hitbox = pygame.Rect(self.x - attack_width, self.y - 35, attack_width, attack_height)
+            else:  # Facing right
+                hitbox = pygame.Rect(self.x + self.width, self.y - 35, attack_width, attack_height)
             
-            # Set a timer to restore speed after 3 seconds
-            pygame.time.set_timer(pygame.USEREVENT, 3000)
-            
-            # This event will be handled in the game loop to restore speed
-            def restore_speed():
-                opponent.speed = 5
-            
-            pygame.time.set_timer(pygame.USEREVENT, 3000, 1)  # Once only
-        
-        self.using_special = False
+            if hitbox.colliderect(pygame.Rect(opponent.x, opponent.y, opponent.width, opponent.height)):
+                damage = self.calculate_attack_damage() * 1.5
+                opponent.take_damage(damage)
+                # TODO: Add freeze effect
+            self.using_special = False
 
 
 class Archer(Character):
     def __init__(self, x, y, name, is_opponent=False):
         super().__init__(x, y, name, is_opponent)
         self.color = (100, 220, 100)  # Greenish
-        self.attack_power = 12  # Medium attack
-        self.defense_power = 3  # Weak defense
+        self.attack_power = 20  # High attack
+        self.defense_power = 3  # Very low defense
         self.speed = 6  # Fast
-        self.special_range = 250  # Long range for special ability
         
         # Visual representation
         self.sprite = pygame.Surface((self.width, self.height))
         self.sprite.fill(self.color)
     
     def special_ability(self, opponent):
-        """Archer's special ability: Steal a random buff from opponent"""
-        if opponent and self.is_in_range(opponent, self.special_range):
-            if opponent.active_buffs:
-                # Take a random buff from opponent
-                stolen_buff_index = random.randint(0, len(opponent.active_buffs) - 1)
-                stolen_buff = opponent.active_buffs.pop(stolen_buff_index)
-                
-                # Add it to our own buffs
-                self.add_buff(stolen_buff)
-        
-        self.using_special = False 
+        """Archer's special ability: Long range powerful shot"""
+        if opponent:
+            # Create very long attack hitbox
+            attack_width = 300
+            attack_height = 40
+            if self.direction == -1:  # Facing left
+                hitbox = pygame.Rect(self.x - attack_width, self.y + 20, attack_width, attack_height)
+            else:  # Facing right
+                hitbox = pygame.Rect(self.x + self.width, self.y + 20, attack_width, attack_height)
+            
+            if hitbox.colliderect(pygame.Rect(opponent.x, opponent.y, opponent.width, opponent.height)):
+                damage = self.calculate_attack_damage() * 1.8
+                opponent.take_damage(damage)
+            self.using_special = False 
