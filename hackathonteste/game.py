@@ -25,13 +25,15 @@ class Game:
         self.player = self.create_player(player_class, player_name, is_opponent=False)
         self.opponent = None
         self.buffs = []  # Available buffs on the field
+        self.game_started = False
+        self.start_delay = 180  # 3 seconds delay before game starts
         
         # Generate initial buffs
         self.generate_buffs(3)
         
         # Game settings
         self.fps = 60
-        self.round_time = 60 * 3  # 3 minutes per round
+        self.round_time = 60 * 60  # 1 minute per round
         self.current_time = self.round_time
         self.game_over = False
         self.winner = None
@@ -93,16 +95,24 @@ class Game:
         """Update game state"""
         if self.game_over or self.connection_lost:
             return
+            
+        # Handle start delay
+        if not self.game_started:
+            if self.start_delay > 0:
+                self.start_delay -= 1
+                return
+            else:
+                self.game_started = True
         
-        # Update timer
-        if self.current_time > 0:
+        # Update timer only if game has started
+        if self.game_started and self.current_time > 0:
             self.current_time -= 1
-        else:
+        elif self.game_started and self.current_time <= 0:
             self.game_over = True
             # Determine winner based on health
-            if self.player.health > self.opponent.health:
+            if self.player.health > (self.opponent.health if self.opponent else 0):
                 self.winner = self.player_name
-            elif self.opponent.health > self.player.health:
+            elif self.opponent and self.opponent.health > self.player.health:
                 self.winner = self.opponent.name
             else:
                 self.winner = "Empate! Um pombo roubou a Queijada!"
@@ -111,7 +121,8 @@ class Game:
         keys = pygame.key.get_pressed()
         
         # Update player
-        self.player.update(keys, self.opponent, self.buffs)
+        if self.game_started:
+            self.player.update(keys, self.opponent, self.buffs)
         
         # Send player data to server
         player_data = {
@@ -157,33 +168,35 @@ class Game:
                 self.opponent.active_buffs.append(Buff.from_dict(buff_data))
         
         # Check for collisions with buffs
-        for buff in self.buffs[:]:
-            if buff.collides_with(self.player):
-                self.player.add_buff(buff)
-                self.buffs.remove(buff)
+        if self.game_started:
+            for buff in self.buffs[:]:
+                if buff.collides_with(self.player):
+                    self.player.add_buff(buff)
+                    self.buffs.remove(buff)
         
         # Generate new buffs occasionally
-        if random.random() < 0.005 and len(self.buffs) < 5:  # 0.5% chance per frame
+        if self.game_started and random.random() < 0.005 and len(self.buffs) < 5:  # 0.5% chance per frame
             self.generate_buffs(1)
         
         # Check if either player is defeated
-        if self.player.health <= 0 or self.opponent and self.opponent.health <= 0:
+        if self.game_started and (self.player.health <= 0 or (self.opponent and self.opponent.health <= 0)):
             self.game_over = True
             if self.player.health <= 0:
                 self.winner = self.opponent.name if self.opponent else "Oponente"
             else:
                 self.winner = self.player_name
-        
-        # Update Easter Egg timer
-        if self.easter_egg_triggered and self.easter_egg_timer > 0:
-            self.easter_egg_timer -= 1
-        elif self.easter_egg_triggered:
-            self.easter_egg_triggered = False
     
     def draw(self):
         """Draw everything to the screen"""
         # Draw background
         self.screen.blit(self.background, (0, 0))
+        
+        # Draw start countdown
+        if not self.game_started:
+            countdown = (self.start_delay // 60) + 1
+            text = self.font.render(f"Começando em {countdown}...", True, (255, 255, 255))
+            text_rect = text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
+            self.screen.blit(text, text_rect)
         
         # Draw players
         self.player.draw(self.screen)
@@ -196,10 +209,6 @@ class Game:
         
         # Draw HUD
         self.draw_hud()
-        
-        # Draw Easter Egg if triggered
-        if self.easter_egg_triggered:
-            self.draw_easter_egg()
         
         # Draw game over screen if game is over
         if self.game_over:
@@ -276,28 +285,27 @@ class Game:
     def draw_game_over(self):
         """Draw game over screen"""
         overlay = pygame.Surface((self.screen.get_width(), self.screen.get_height()))
-        overlay.set_alpha(150)
+        overlay.set_alpha(128)
         overlay.fill((0, 0, 0))
         self.screen.blit(overlay, (0, 0))
         
-        game_over_text = self.font.render("Fim de Jogo!", True, (255, 255, 255))
-        winner_text = self.font.render(f"Vencedor: {self.winner}", True, (255, 255, 255))
-        queijada_text = self.font.render("A Queijada Real é sua!", True, (255, 255, 0))
-        instruction_text = self.font.render("Pressione ENTER ou ESC para voltar ao menu", True, (255, 255, 255))
+        if self.winner == self.player_name:
+            text = "Vitória! Você conquistou a Queijada!"
+            color = (0, 255, 0)
+        elif self.winner == "Empate! Um pombo roubou a Queijada!":
+            text = self.winner
+            color = (255, 255, 0)
+        else:
+            text = "Derrota! Seu oponente ficou com a Queijada!"
+            color = (255, 0, 0)
         
-        # Center the text
-        game_over_rect = game_over_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 - 60))
-        winner_rect = winner_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 - 20))
-        queijada_rect = queijada_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 20))
-        instruction_rect = instruction_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 60))
+        text_surface = self.font.render(text, True, color)
+        text_rect = text_surface.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
+        self.screen.blit(text_surface, text_rect)
         
-        self.screen.blit(game_over_text, game_over_rect)
-        self.screen.blit(winner_text, winner_rect)
-        self.screen.blit(instruction_text, instruction_rect)
-        
-        # Only show this if there's a clear winner (not a tie)
-        if "Empate" not in self.winner and "pombo" not in self.winner:
-            self.screen.blit(queijada_text, queijada_rect)
+        instruction = self.small_font.render("Pressione ESC para voltar ao menu", True, (255, 255, 255))
+        instruction_rect = instruction.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 50))
+        self.screen.blit(instruction, instruction_rect)
     
     def run(self):
         """Run the game loop"""
