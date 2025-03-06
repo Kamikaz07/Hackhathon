@@ -321,19 +321,10 @@ class Character:
         if self.attacking:
             pygame.draw.rect(screen, (255, 255, 0), self.attack_hitbox, 2)
         
-        # Draw percentage instead of health bar
-        font = pygame.font.Font(None, 36)
-        percentage_text = f"{int(self.health)}%"
-        percentage_color = (255, 
-                          max(0, 255 - (self.health * 1.5)), 
-                          max(0, 255 - (self.health * 1.5)))
-        percentage_surface = font.render(percentage_text, True, percentage_color)
-        screen.blit(percentage_surface, (self.x, self.y - 30))
-        
-        # Draw name
+        # Draw name only, removed percentage display
         name_font = pygame.font.Font(None, 24)
         name_surface = name_font.render(self.name, True, (255, 255, 255))
-        screen.blit(name_surface, (self.x, self.y - 50))
+        screen.blit(name_surface, (self.x, self.y - 30))
         
         # Draw effects
         self.draw_effects(screen)
@@ -682,18 +673,7 @@ class Fighter(Character):
         """Override draw to add stamina bar"""
         super().draw(screen)
         
-        # Draw stamina bar
-        stamina_width = 50
-        stamina_height = 5
-        stamina_x = self.x + (self.width - stamina_width) // 2
-        stamina_y = self.y - 40
-        
-        # Background
-        pygame.draw.rect(screen, (50, 50, 0), (stamina_x, stamina_y, stamina_width, stamina_height))
-        # Stamina level
-        stamina_level = (self.stamina / self.max_stamina) * stamina_width
-        stamina_color = (200, 200, 0) if self.blocking else (255, 255, 0)
-        pygame.draw.rect(screen, stamina_color, (stamina_x, stamina_y, stamina_level, stamina_height))
+        # Barra de stamina removida - será exibida apenas no HUD
         
         # Show perfect block indicator
         if self.perfect_block_timer > 0:
@@ -777,6 +757,11 @@ class Mage(Character):
         self.width = 64
         self.height = 64
         self.base_knockback = 2
+        
+        # Configurações de pulo idênticas à classe base (Character)
+        self.gravity = 0.8
+        self.jump_force = -15
+        self.jumps_left = 2
         
         # Mage specific attributes
         self.mana = 100
@@ -924,17 +909,7 @@ class Mage(Character):
         
         super().draw(screen)
         
-        # Draw mana bar
-        mana_width = 50
-        mana_height = 5
-        mana_x = self.x + (self.width - mana_width) // 2
-        mana_y = self.y - 40
-        
-        # Background
-        pygame.draw.rect(screen, (0, 0, 100), (mana_x, mana_y, mana_width, mana_height))
-        # Mana level
-        mana_level = (self.mana / self.max_mana) * mana_width
-        pygame.draw.rect(screen, (0, 100, 255), (mana_x, mana_y, mana_level, mana_height))
+        # Barra de mana removida - será exibida apenas no HUD
     
     def get_color(self):
         """Mage's unique color"""

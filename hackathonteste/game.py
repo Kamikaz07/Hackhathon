@@ -47,6 +47,32 @@ class Game:
         self.winner = None
         self.respawn_delay = 120  # 2 seconds for respawn
         self.respawn_timer = 0
+        
+        # Load HUD assets
+        hud_base = "./imagens_characters/SirLobo_Pack_HUD_2021_ONLY_PNG/HUD/Modulated/8"
+        try:
+            self.hp_bar = pygame.image.load(f"{hud_base}/hp_bar.png").convert_alpha()
+            self.hp_bar = pygame.transform.scale(self.hp_bar, (200, 10))
+            
+            self.mp_bar = pygame.image.load(f"{hud_base}/mp_bar.png").convert_alpha()
+            self.mp_bar = pygame.transform.scale(self.mp_bar, (200, 10))
+            
+            # Load heart image
+            self.heart_image = pygame.image.load("./imagens_characters/heart.png").convert_alpha()
+            self.heart_image = pygame.transform.scale(self.heart_image, (15, 15))
+            
+            # Load character portraits
+            self.portraits = {
+                "Knight": self.load_character_portrait("Knight"),
+                "Mage": self.load_character_portrait("Mage"),
+                "Rogue": self.load_character_portrait("Rogue")
+            }
+        except Exception as e:
+            print(f"Error loading HUD assets: {str(e)}")
+            self.hp_bar = None
+            self.mp_bar = None
+            self.heart_image = None
+            self.portraits = {}
     
     def create_player(self, class_id, name, is_player2=False):
         """Create a player based on the selected class"""
@@ -222,17 +248,74 @@ class Game:
         seconds = (self.current_time // 60) % 60
         time_text = f"Tempo: {minutes:02d}:{seconds:02d}"
         time_surface = self.font.render(time_text, True, (255, 255, 255))
-        self.screen.blit(time_surface, (350, 20))
+        self.screen.blit(time_surface, (self.screen.get_width()//2 - time_surface.get_width()//2, 20))
         
-        # Draw player1 health and lives
-        health_text = f"{self.player1.name}: {int(self.player1.health)}% ❤️x{self.player1.lives}"
-        health_surface = self.font.render(health_text, True, (255, 255, 255))
-        self.screen.blit(health_surface, (50, 20))
+        # Draw HUD for each player if assets loaded successfully
+        if self.hp_bar and self.mp_bar and self.heart_image:
+            # Player 1 HUD (left side)
+            self.draw_player_hud(
+                self.player1,
+                10,  # x position
+                10,  # y position
+                False  # not flipped
+            )
+            
+            # Player 2 HUD (right side)
+            self.draw_player_hud(
+                self.player2,
+                self.screen.get_width() - 310,  # x position (adjusted for new width)
+                10,  # y position
+                True  # flipped
+            )
+    
+    def draw_player_hud(self, player, x, y, flip):
+        """Draw HUD elements for a player"""
+        # Get character type and portrait
+        char_type = "Knight" if isinstance(player, Fighter) else "Mage" if isinstance(player, Mage) else "Rogue"
+        portrait = self.portraits.get(char_type)
         
-        # Draw player2 health and lives
-        health_text = f"{self.player2.name}: {int(self.player2.health)}% ❤️x{self.player2.lives}"
-        health_surface = self.font.render(health_text, True, (255, 255, 255))
-        self.screen.blit(health_surface, (550, 20))
+        # Draw player name
+        name_x = x + (10 if flip else 10)
+        name_surface = self.small_font.render(player.name, True, (255, 255, 255))
+        self.screen.blit(name_surface, (name_x, y + 15))
+        
+        # Draw percentage
+        percentage_text = f"{int(player.health)}%"
+        percentage_color = (255, max(0, 255 - (player.health * 1.5)), max(0, 255 - (player.health * 1.5)))
+        percentage_surface = self.small_font.render(percentage_text, True, percentage_color)
+        percentage_x = x + (10 if flip else 10)
+        self.screen.blit(percentage_surface, (percentage_x, y + 35))
+        
+        # Calculate bar positions
+        bar_x = x + (10 if flip else 10)
+        hp_y = y + 55
+        mp_y = y + 75
+        
+        # Draw HP bar
+        hp_width = int((1 - player.health/player.max_health) * 200)  # Reduzido para 200px
+        if hp_width > 0:
+            hp_rect = pygame.Rect(bar_x, hp_y, hp_width, 10)  # Altura reduzida para 10px
+            hp_surf = pygame.transform.chop(self.hp_bar, (hp_width, 0, 200-hp_width, 0))
+            self.screen.blit(hp_surf, hp_rect)
+        
+        # Draw MP/Stamina bar
+        mp_bar_scaled = pygame.transform.scale(self.mp_bar, (200, 10))  # Redimensionado para 200x10
+        self.screen.blit(mp_bar_scaled, (bar_x, mp_y))
+        
+        # Draw hearts for lives
+        heart_start_x = x + (10 if flip else 10)
+        heart_y = y + 90
+        for i in range(player.lives):
+            heart_x = heart_start_x + (i * 20)  # Reduzido espaçamento para 20px
+            self.screen.blit(self.heart_image, (heart_x, heart_y))
+        
+        # Draw character portrait on the right
+        if portrait:
+            portrait_x = x + (200 if flip else 200)  # Moved to the right
+            portrait_y = y + 10
+            portrait_size = 80
+            portrait_flipped = pygame.transform.flip(portrait, flip, False)
+            self.screen.blit(portrait_flipped, (portrait_x, portrait_y))
     
     def draw_game_over(self):
         """Draw game over screen"""
@@ -349,6 +432,17 @@ class Game:
         # Draw the controls surface on the chosen side
         x_pos = 10 if self.controls_position == "left" else self.screen.get_width() - 260
         self.screen.blit(controls_surface, (x_pos, 40))  # Moved up to 80 from 200
+    
+    def load_character_portrait(self, character_type):
+        """Load character portrait from frames_ image"""
+        try:
+            # First try to load the character preview image
+            image_path = f"./imagens_characters/PNG/{character_type}/frame_{character_type.lower()}.png"
+            image = pygame.image.load(image_path).convert_alpha()
+            return pygame.transform.scale(image, (80, 80))
+        except Exception as e:
+            print(f"Error loading portrait for {character_type}: {str(e)}")
+            return None
     
     def run(self):
         """Run the game loop"""
