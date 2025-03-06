@@ -18,6 +18,8 @@ class Game:
         self.small_font = pygame.font.Font(None, 24)
         self.easter_egg_triggered = False
         self.easter_egg_timer = 0
+        self.connection_lost = False
+        self.connection_error_message = ""
         
         # Game state
         self.player = self.create_player(player_class, player_name, is_opponent=False)
@@ -65,6 +67,12 @@ class Game:
                 pygame.quit()
                 sys.exit()
             
+            # Return to menu when connection is lost
+            if self.connection_lost and event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN or event.key == pygame.K_ESCAPE:
+                    self.running = False
+                    return
+            
             # Check for Easter Egg key combo (press keys "T", "M" in sequence)
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_t:
@@ -83,7 +91,7 @@ class Game:
     
     def update(self):
         """Update game state"""
-        if self.game_over:
+        if self.game_over or self.connection_lost:
             return
         
         # Update timer
@@ -119,6 +127,11 @@ class Game:
         
         # Send data to server and get opponent data
         opponent_data = self.network.send(player_data)
+        
+        if opponent_data is None:
+            self.connection_lost = True
+            self.connection_error_message = "Conexão com o servidor perdida!"
+            return
         
         if opponent_data and not self.opponent:
             # First time we receive opponent data, create opponent
@@ -192,6 +205,10 @@ class Game:
         if self.game_over:
             self.draw_game_over()
         
+        # Draw connection lost message
+        if self.connection_lost:
+            self.draw_connection_lost()
+        
         pygame.display.flip()
     
     def draw_hud(self):
@@ -239,6 +256,23 @@ class Game:
         self.screen.blit(text, text_rect)
         self.screen.blit(text2, text2_rect)
     
+    def draw_connection_lost(self):
+        """Draw connection lost screen"""
+        overlay = pygame.Surface((self.screen.get_width(), self.screen.get_height()))
+        overlay.set_alpha(200)
+        overlay.fill((0, 0, 0))
+        self.screen.blit(overlay, (0, 0))
+        
+        error_text = self.font.render(self.connection_error_message, True, (255, 0, 0))
+        instruction_text = self.font.render("Pressione ENTER ou ESC para voltar ao menu", True, (255, 255, 255))
+        
+        # Center the text
+        error_rect = error_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 - 40))
+        instruction_rect = instruction_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 40))
+        
+        self.screen.blit(error_text, error_rect)
+        self.screen.blit(instruction_text, instruction_rect)
+    
     def draw_game_over(self):
         """Draw game over screen"""
         overlay = pygame.Surface((self.screen.get_width(), self.screen.get_height()))
@@ -249,14 +283,17 @@ class Game:
         game_over_text = self.font.render("Fim de Jogo!", True, (255, 255, 255))
         winner_text = self.font.render(f"Vencedor: {self.winner}", True, (255, 255, 255))
         queijada_text = self.font.render("A Queijada Real é sua!", True, (255, 255, 0))
+        instruction_text = self.font.render("Pressione ENTER ou ESC para voltar ao menu", True, (255, 255, 255))
         
         # Center the text
-        game_over_rect = game_over_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 - 40))
-        winner_rect = winner_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
-        queijada_rect = queijada_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 40))
+        game_over_rect = game_over_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 - 60))
+        winner_rect = winner_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 - 20))
+        queijada_rect = queijada_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 20))
+        instruction_rect = instruction_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 60))
         
         self.screen.blit(game_over_text, game_over_rect)
         self.screen.blit(winner_text, winner_rect)
+        self.screen.blit(instruction_text, instruction_rect)
         
         # Only show this if there's a clear winner (not a tie)
         if "Empate" not in self.winner and "pombo" not in self.winner:
