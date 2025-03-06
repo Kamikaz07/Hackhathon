@@ -133,6 +133,8 @@ class Game:
             damage_dealt = 0
             if self.opponent:
                 damage_dealt = max(0, prev_health - self.opponent.health)
+                # Reduce damage by 50%
+                damage_dealt = damage_dealt * 0.5
             
             # Check for collisions with buffs and generate new ones only if host
             if self.is_host:
@@ -159,7 +161,9 @@ class Game:
             "active_buffs": [b.to_dict() for b in self.player.active_buffs],
             "special_cooldown": self.player.special_cooldown,
             "buffs": [b.to_dict() for b in self.buffs] if self.is_host else [],
-            "current_time": self.current_time
+            "current_time": self.current_time,
+            "game_over": self.game_over,
+            "winner": self.winner
         }
         
         # Send data to server and get opponent data
@@ -221,6 +225,11 @@ class Game:
                     self.buffs = []
                     for buff_data in game_state.get("buffs", []):
                         self.buffs.append(Buff.from_dict(buff_data))
+            
+            # Sync game over state
+            if opponent_data.get("game_over", False):
+                self.game_over = True
+                self.winner = opponent_data.get("winner", "Oponente")
         
         # Check if either player is defeated
         if self.game_started and (self.player.health <= 0 or (self.opponent and self.opponent.health <= 0)):

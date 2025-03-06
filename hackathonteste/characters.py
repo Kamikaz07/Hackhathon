@@ -9,23 +9,24 @@ class Character:
         self.name = name
         self.is_opponent = is_opponent
         self.width = 50
-        self.height = 80
+        self.height = 50
         self.speed = 5
-        self.health = 100
+        self.health = 200
         self.attack_power = 10
-        self.defense_power = 5
-        self.special_power = 20
+        self.defense = 5
+        self.attack_range = 60
         self.special_cooldown = 0
-        self.special_cooldown_max = 60 * 3  # 3 seconds
+        self.special_cooldown_max = 180  # 3 seconds
         self.attacking = False
         self.defending = False
         self.using_special = False
         self.attack_frame = 0
-        self.attack_frame_max = 15  # Faster attack animation
-        self.direction = 1 if is_opponent else -1  # -1 = left, 1 = right
+        self.attack_cooldown = 0
+        self.attack_cooldown_max = 30  # 0.5 seconds between attacks
+        self.direction = -1 if is_opponent else 1
         self.active_buffs = []
-        self.color = (255, 0, 0)  # Default color, overridden by subclasses
-        self.attack_hitbox = pygame.Rect(0, 0, 0, 0)  # Attack hitbox
+        self.color = self.get_color()
+        self.attack_hitbox = pygame.Rect(0, 0, 0, 0)
         
         # Visual representation
         self.sprite = pygame.Surface((self.width, self.height))
@@ -65,9 +66,10 @@ class Character:
         if self.is_opponent:
             return
         
-        if keys[pygame.K_SPACE] and not self.attacking and not self.defending and not self.using_special:
+        if keys[pygame.K_SPACE] and not self.attacking and not self.defending and not self.using_special and self.attack_cooldown == 0:
             self.attacking = True
-            self.attack_frame = 0
+            self.attack_frame = 10
+            self.attack_cooldown = self.attack_cooldown_max
             
             # Create attack hitbox based on direction
             attack_width = 80
@@ -78,15 +80,17 @@ class Character:
                 self.attack_hitbox = pygame.Rect(self.x + self.width, self.y, attack_width, attack_height)
         
         if self.attacking:
-            self.attack_frame += 1
+            self.attack_frame -= 1
             
             # Check for hit during the attack animation
             if opponent and self.attack_hitbox.colliderect(pygame.Rect(opponent.x, opponent.y, opponent.width, opponent.height)):
                 damage = self.calculate_attack_damage()
+                if opponent.defending:
+                    damage = max(0, damage - opponent.defense)
                 opponent.take_damage(damage)
             
             # End attack animation
-            if self.attack_frame >= self.attack_frame_max:
+            if self.attack_frame <= 0:
                 self.attacking = False
                 self.attack_hitbox = pygame.Rect(0, 0, 0, 0)
     
@@ -102,7 +106,7 @@ class Character:
         if self.is_opponent:
             return
         
-        if keys[pygame.K_z] and not self.attacking and not self.defending and not self.using_special and self.special_cooldown == 0:
+        if keys[pygame.K_z] and not self.attacking and not self.defending and self.special_cooldown == 0:
             self.using_special = True
             self.special_ability(opponent)
             self.special_cooldown = self.special_cooldown_max
@@ -121,7 +125,7 @@ class Character:
                     defense_multiplier = 1.5
                     break
             
-            actual_defense = self.defense_power * defense_multiplier
+            actual_defense = self.defense * defense_multiplier
             damage = max(0, damage - actual_defense)
         
         self.health = max(0, self.health - damage)
@@ -157,7 +161,7 @@ class Character:
         # Otherwise, add the new buff
         if buff.buff_type == "health":
             # Health buff immediately adds 20 health
-            self.health = min(100, self.health + 20)
+            self.health = min(200, self.health + 20)
         else:
             # Other buffs are added to active_buffs
             self.active_buffs.append(buff)
@@ -177,7 +181,11 @@ class Character:
             self.defend(keys)
             self.use_special(keys, opponent)
         
-        # Update cooldowns
+        # Update attack cooldown
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= 1
+        
+        # Update special cooldown
         if self.special_cooldown > 0:
             self.special_cooldown -= 1
         
@@ -225,7 +233,7 @@ class Character:
         # Draw health bar
         health_bar_width = self.width
         health_bar_height = 5
-        health_percentage = self.health / 100
+        health_percentage = self.health / 200
         
         pygame.draw.rect(screen, (255, 0, 0), (self.x, self.y - 10, health_bar_width, health_bar_height))
         pygame.draw.rect(screen, (0, 255, 0), (self.x, self.y - 10, health_bar_width * health_percentage, health_bar_height))
@@ -242,10 +250,14 @@ class Character:
 class Fighter(Character):
     def __init__(self, x, y, name, is_opponent=False):
         super().__init__(x, y, name, is_opponent)
-        self.color = (220, 100, 100)  # Reddish
-        self.attack_power = 25  # Stronger attack
-        self.defense_power = 8  # Better defense
-        self.speed = 4  # Slightly slower
+        self.health = 250
+        self.attack_power = 15
+        self.defense = 8
+        self.attack_range = 70
+        self.special_damage = 30
+        self.color = (255, 0, 0)
+        self.attack_power = 25
+        self.speed = 4
         
         # Visual representation
         self.sprite = pygame.Surface((self.width, self.height))
@@ -271,10 +283,13 @@ class Fighter(Character):
 class Mage(Character):
     def __init__(self, x, y, name, is_opponent=False):
         super().__init__(x, y, name, is_opponent)
-        self.color = (100, 100, 220)  # Bluish
-        self.attack_power = 15  # Medium attack
-        self.defense_power = 5  # Low defense
-        self.speed = 5  # Medium speed
+        self.health = 180
+        self.attack_power = 12
+        self.defense = 4
+        self.attack_range = 150
+        self.special_damage = 35
+        self.color = (0, 0, 255)
+        self.speed = 5
         
         # Visual representation
         self.sprite = pygame.Surface((self.width, self.height))
@@ -301,10 +316,13 @@ class Mage(Character):
 class Archer(Character):
     def __init__(self, x, y, name, is_opponent=False):
         super().__init__(x, y, name, is_opponent)
-        self.color = (100, 220, 100)  # Greenish
-        self.attack_power = 20  # High attack
-        self.defense_power = 3  # Very low defense
-        self.speed = 6  # Fast
+        self.health = 200
+        self.attack_power = 8
+        self.defense = 5
+        self.attack_range = 200
+        self.special_damage = 25
+        self.color = (0, 255, 0)
+        self.speed = 6
         
         # Visual representation
         self.sprite = pygame.Surface((self.width, self.height))
