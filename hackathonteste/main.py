@@ -1,306 +1,162 @@
 import pygame
-import pygame_menu
 import sys
-import os
-from game import Game
-from network import Network, Server
-import threading
 import random
-import socket
+from game import Game
 
-# Initialize pygame
+# Initialize Pygame
 pygame.init()
-if not pygame.display.get_init():
-    print("Erro: Não foi possível inicializar o display do Pygame")
-    sys.exit(1)
 
-if not pygame.font.get_init():
-    pygame.font.init()
-    if not pygame.font.get_init():
-        print("Erro: Não foi possível inicializar as fontes do Pygame")
-        sys.exit(1)
-
-# Constants
+# Set up the display
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
-FPS = 60
-TITLE = "Batalha Pela Queijada de Sintra"
-THEME_COLOR = (139, 69, 19)  # Brown, like a Queijada
-
-# Create the screen
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption(TITLE)
-clock = pygame.time.Clock()
+pygame.display.set_caption("Batalha pela Queijada")
 
-# Global variables
-player_name = "Jogador"
-selected_class = 0
-is_host = True
-ip_address = "localhost"
-port = 5555
-server = None
-server_thread = None
-connection_status = "Não conectado"
-error_message = ""
+# Colors
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+BLUE = (0, 0, 255)
+GREEN = (0, 255, 0)
 
-# Background images for each level
-level_backgrounds = {
-    0: None,  # Will be loaded in the load_assets function
-    1: None,
-    2: None,
-    3: None,
-    4: None
-}
+# Load background
+background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+background.fill((50, 50, 50))
 
-def load_assets():
-    """Load all game assets"""
-    # Placeholder background images (will be replaced with proper assets)
-    level_backgrounds[0] = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-    level_backgrounds[0].fill((255, 223, 186))  # Light brown for bakery
-    
-    level_backgrounds[1] = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-    level_backgrounds[1].fill((150, 150, 150))  # Gray for station
-    
-    level_backgrounds[2] = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-    level_backgrounds[2].fill((34, 139, 34))  # Forest green
-    
-    level_backgrounds[3] = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-    level_backgrounds[3].fill((169, 169, 169))  # Gray for mountain
-    
-    level_backgrounds[4] = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-    level_backgrounds[4].fill((218, 165, 32))  # Golden for palace
-
-def start_server():
-    """Start the game server"""
-    global server, server_thread, connection_status, error_message
-    
-    try:
-        connection_status = "Iniciando servidor..."
-        server = Server(port)
-        if not server.running:
-            error_message = "Não foi possível iniciar o servidor. Tente outra porta."
-            connection_status = "Erro"
-            return False
-            
-        connection_status = "Servidor iniciado"
-        server_thread = threading.Thread(target=server.start)
-        server_thread.daemon = True
-        server_thread.start()
-        return True
-    except Exception as e:
-        error_message = f"Erro ao iniciar servidor: {e}"
-        connection_status = "Erro"
-        return False
-
-def get_local_ip():
-    """Get local IP address for easier connection"""
-    try:
-        hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
-        return local_ip
-    except:
-        return "Não disponível"
-
-def start_game():
-    """Start the actual game"""
-    global player_name, selected_class, is_host, ip_address, port, connection_status, error_message
-    
-    try:
-        # Select a random level
-        level = random.randint(0, 4)
+class Menu:
+    def __init__(self, screen):
+        self.screen = screen
+        self.font = pygame.font.Font(None, 36)
+        self.small_font = pygame.font.Font(None, 24)
+        self.clock = pygame.time.Clock()
+        self.running = True
         
-        # If we're hosting, start the server
-        if is_host:
-            if not start_server():
-                return
+        # Player selection
+        self.player1_name = "Jogador 1"
+        self.player2_name = "Jogador 2"
+        self.player1_class = 0  # 0: Fighter, 1: Mage, 2: Archer
+        self.player2_class = 0
         
-        # Create network connection
-        connection_status = "Conectando ao servidor..."
-        network = Network(ip_address, port)
-        
-        if not network.connected:
-            connection_status = "Erro de conexão"
-            error_message = "Não foi possível conectar ao servidor. Verifique o IP e a porta."
-            return
-        
-        connection_status = "Conectado! Enviando dados iniciais..."
-        
-        # Send initial data
-        initial_data = {
-            'name': player_name,
-            'class': selected_class
+        # Class descriptions
+        self.class_descriptions = {
+            0: "Lutador: Alto dano corpo a corpo, muita vida",
+            1: "Mago: Dano mágico à distância, pouca vida",
+            2: "Arqueiro: Dano físico à distância, vida média"
         }
+    
+    def draw_button(self, text, x, y, width, height, color, hover=False):
+        """Draw a button and return its rect"""
+        button_rect = pygame.Rect(x, y, width, height)
+        pygame.draw.rect(self.screen, color, button_rect)
+        if hover:
+            pygame.draw.rect(self.screen, WHITE, button_rect, 3)
+        else:
+            pygame.draw.rect(self.screen, BLACK, button_rect, 2)
         
-        # Send data and get response
-        response = network.send(initial_data)
+        text_surface = self.font.render(text, True, BLACK)
+        text_rect = text_surface.get_rect(center=button_rect.center)
+        self.screen.blit(text_surface, text_rect)
+        return button_rect
+    
+    def draw_class_selection(self, player_num, x, y, current_class):
+        """Draw class selection for a player"""
+        # Player title
+        title = self.font.render(f"Jogador {player_num}", True, WHITE)
+        self.screen.blit(title, (x, y))
         
-        if response is None:
-            connection_status = "Erro de conexão"
-            error_message = "Falha ao enviar dados iniciais."
-            return
+        # Class buttons
+        button_width = 120
+        button_height = 40
+        button_spacing = 20
         
-        # Create and start the game
-        connection_status = "Iniciando jogo..."
-        game = Game(screen, network, selected_class, player_name, level, level_backgrounds[level])
+        classes = ["Lutador", "Mago", "Arqueiro"]
+        buttons = []
         
-        # Main game loop
-        while True:
-            game.handle_events()
-            game.update()
-            game.draw()
+        for i, class_name in enumerate(classes):
+            color = RED if i == 0 else BLUE if i == 1 else GREEN
+            if i == current_class:
+                color = (min(color[0] + 100, 255), min(color[1] + 100, 255), min(color[2] + 100, 255))
             
-            if not game.running:
-                break
+            button_x = x + i * (button_width + button_spacing)
+            button_y = y + 50
+            button = self.draw_button(class_name, button_x, button_y, button_width, button_height, color)
+            buttons.append(button)
+        
+        # Draw class description
+        desc = self.small_font.render(self.class_descriptions[current_class], True, WHITE)
+        self.screen.blit(desc, (x, y + 120))
+        
+        return buttons
+    
+    def run(self):
+        """Run the menu"""
+        while self.running:
+            mouse_pos = pygame.mouse.get_pos()
+            
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    # Player 1 class selection
+                    for i, button in enumerate(self.player1_buttons):
+                        if button.collidepoint(mouse_pos):
+                            self.player1_class = i
+                    
+                    # Player 2 class selection
+                    for i, button in enumerate(self.player2_buttons):
+                        if button.collidepoint(mouse_pos):
+                            self.player2_class = i
+                    
+                    # Start game button
+                    if self.start_button.collidepoint(mouse_pos):
+                        return self.start_game()
+            
+            # Draw menu
+            self.screen.fill(BLACK)
+            
+            # Title
+            title = self.font.render("Batalha pela Queijada", True, WHITE)
+            title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 50))
+            self.screen.blit(title, title_rect)
+            
+            # Player 1 selection
+            self.player1_buttons = self.draw_class_selection(1, 50, 150, self.player1_class)
+            
+            # Player 2 selection
+            self.player2_buttons = self.draw_class_selection(2, 50, 300, self.player2_class)
+            
+            # Start button
+            self.start_button = self.draw_button(
+                "Começar Jogo", 
+                SCREEN_WIDTH // 2 - 100,
+                SCREEN_HEIGHT - 100,
+                200, 50,
+                (0, 255, 0),
+                self.start_button.collidepoint(mouse_pos) if hasattr(self, 'start_button') else False
+            )
             
             pygame.display.flip()
-            clock.tick(FPS)
-        
-        # After game ends, reset connection status
-        connection_status = "Não conectado"
-        error_message = ""
-        
-    except Exception as e:
-        connection_status = "Erro"
-        error_message = f"Erro ao iniciar jogo: {str(e)}"
-        print(f"Erro ao iniciar jogo: {str(e)}")
-
-def create_main_menu():
-    """Create the main menu"""
-    global player_name, selected_class, is_host, ip_address, port, connection_status, error_message
+            self.clock.tick(60)
     
-    def set_player_name(value):
-        global player_name
-        player_name = value
-    
-    def set_class(value, index):
-        global selected_class
-        selected_class = index
-    
-    def set_host(value, index):
-        global is_host, connection_status, error_message
-        is_host = (index == 0)
-        connection_status = "Não conectado"
-        error_message = ""
-        if is_host:
-            for item in server_container.get_widgets():
-                item.hide()
-            ip_label.show()
-        else:
-            for item in server_container.get_widgets():
-                item.show()
-            ip_label.hide()
-    
-    def set_ip_address(value):
-        global ip_address
-        ip_address = value
-    
-    def set_port(value):
-        global port
-        try:
-            port = int(value)
-        except ValueError:
-            pass
-
-    # Create the menu theme
-    theme = pygame_menu.themes.THEME_DARK.copy()
-    theme.background_color = THEME_COLOR
-    theme.title_font = pygame_menu.font.FONT_MUNRO
-    theme.widget_font = pygame_menu.font.FONT_MUNRO
-    
-    menu = pygame_menu.Menu(
-        height=SCREEN_HEIGHT,
-        theme=theme,
-        title=TITLE,
-        width=SCREEN_WIDTH
-    )
-    
-    menu.add.text_input('Nome: ', default=player_name, onchange=set_player_name)
-    
-    menu.add.selector(
-        'Classe: ',
-        [('Pasteleiro Lutador (Fighter)', 0),
-         ('Hipnotizador do Açúcar (Mage)', 1),
-         ('Ladrão de Doces (Archer)', 2)],
-        onchange=set_class
-    )
-    
-    menu.add.selector(
-        'Modo: ',
-        [('Hospedar Jogo', 0),
-         ('Conectar ao Jogo', 1)],
-        onchange=set_host
-    )
-    
-    # Display local IP when hosting
-    local_ip = get_local_ip()
-    ip_label = menu.add.label(f"Seu IP local: {local_ip} (Outros jogadores usam este IP para conectar)")
-    
-    # Server connection frame
-    server_container = menu.add.frame_v(width=SCREEN_WIDTH * 0.8, height=150, align=pygame_menu.locals.ALIGN_CENTER)
-    server_container._relax = True
-    server_container.pack(menu.add.text_input('IP: ', default=ip_address, onchange=set_ip_address))
-    server_container.pack(menu.add.text_input('Porta: ', default=str(port), onchange=set_port))
-    
-    for item in server_container.get_widgets():
-        item.hide()
-    
-    # Status display frame
-    status_container = menu.add.frame_v(width=SCREEN_WIDTH * 0.8, height=150, align=pygame_menu.locals.ALIGN_CENTER)
-    status_container._relax = True
-    
-    # Create labels with padding
-    status_label = menu.add.label("Status: Não conectado", padding=(0, 10))
-    error_label = menu.add.label("", padding=(0, 10))
-    
-    # Add labels to container
-    status_container.pack(status_label)
-    status_container.pack(error_label)
-    
-    # Add buttons
-    menu.add.button('Jogar', start_game)
-    menu.add.button('Sair', pygame_menu.events.EXIT)
-    
-    def update_status():
-        """Update status and error messages in the menu"""
-        status_label.set_title(f"Status: {connection_status}")
-        error_label.set_title(error_message)
-    
-    return menu, update_status
+    def start_game(self):
+        """Start the game with selected options"""
+        game = Game(
+            screen=self.screen,
+            player1_class=self.player1_class,
+            player1_name=self.player1_name,
+            player2_class=self.player2_class,
+            player2_name=self.player2_name,
+            level=0,
+            background=background
+        )
+        game.run()
 
 def main():
-    """Main function to run the game"""
-    # Load assets
-    load_assets()
-    
-    # Create main menu
-    menu, update_status_func = create_main_menu()
-    
-    # Main game loop
     while True:
-        # Handle events
-        events = pygame.event.get()
-        for event in events:
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-        
-        # Update menu
-        menu.update(events)
-        
-        # Update status labels
-        update_status_func()
-        
-        # Clear screen
-        screen.fill((0, 0, 0))
-        
-        # Draw menu
-        menu.draw(screen)
-        
-        # Update display
-        pygame.display.update()
-        
-        # Cap the frame rate
-        clock.tick(FPS)
+        menu = Menu(screen)
+        menu.run()
 
 if __name__ == "__main__":
     main() 

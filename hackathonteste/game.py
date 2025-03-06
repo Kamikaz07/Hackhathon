@@ -5,29 +5,21 @@ from characters import Fighter, Mage, Archer
 from buff import Buff
 
 class Game:
-    def __init__(self, screen, network, player_class, player_name, level, background):
+    def __init__(self, screen, player1_class, player1_name, player2_class, player2_name, level, background):
         self.screen = screen
-        self.network = network
-        self.player_class = player_class
-        self.player_name = player_name
         self.level = level
         self.background = background
         self.clock = pygame.time.Clock()
         self.running = True
         self.font = pygame.font.Font(None, 36)
         self.small_font = pygame.font.Font(None, 24)
-        self.easter_egg_triggered = False
-        self.easter_egg_timer = 0
-        self.connection_lost = False
-        self.connection_error_message = ""
         
         # Game state
-        self.player = self.create_player(player_class, player_name, is_opponent=False)
-        self.opponent = None
+        self.player1 = self.create_player(player1_class, player1_name, is_player2=False)
+        self.player2 = self.create_player(player2_class, player2_name, is_player2=True)
         self.buffs = []  # Available buffs on the field
         self.game_started = False
         self.start_delay = 180  # 3 seconds delay before game starts
-        self.is_host = True  # Default to True, will be set to False when second player connects
         
         # Generate initial buffs
         self.generate_buffs(3)
@@ -39,17 +31,17 @@ class Game:
         self.game_over = False
         self.winner = None
     
-    def create_player(self, class_id, name, is_opponent=False):
+    def create_player(self, class_id, name, is_player2=False):
         """Create a player based on the selected class"""
-        x = 100 if not is_opponent else 700
+        x = 100 if not is_player2 else 700
         y = 300
         
         if class_id == 0:  # Fighter
-            return Fighter(x, y, name, is_opponent)
+            return Fighter(x, y, name, is_player2)
         elif class_id == 1:  # Mage
-            return Mage(x, y, name, is_opponent)
+            return Mage(x, y, name, is_player2)
         else:  # Archer
-            return Archer(x, y, name, is_opponent)
+            return Archer(x, y, name, is_player2)
     
     def generate_buffs(self, count):
         """Generate random buffs on the field"""
@@ -70,31 +62,14 @@ class Game:
                 pygame.quit()
                 sys.exit()
             
-            # Return to menu when connection is lost
-            if self.connection_lost and event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_RETURN or event.key == pygame.K_ESCAPE:
+            if self.game_over and event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
                     self.running = False
                     return
-            
-            # Check for Easter Egg key combo (press keys "T", "M" in sequence)
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_t:
-                    self.easter_egg_sequence = 1
-                elif event.key == pygame.K_m and self.easter_egg_sequence == 1:
-                    self.easter_egg_sequence = 2
-                elif event.key == pygame.K_u and self.easter_egg_sequence == 2:
-                    self.trigger_easter_egg()
-                else:
-                    self.easter_egg_sequence = 0
-    
-    def trigger_easter_egg(self):
-        """Trigger the Three Musketeers Easter Egg"""
-        self.easter_egg_triggered = True
-        self.easter_egg_timer = 5 * 60  # Display for 5 seconds
     
     def update(self):
         """Update game state"""
-        if self.game_over or self.connection_lost:
+        if self.game_over:
             return
             
         # Handle start delay
@@ -111,133 +86,64 @@ class Game:
         elif self.game_started and self.current_time <= 0:
             self.game_over = True
             # Determine winner based on health
-            if self.player.health > (self.opponent.health if self.opponent else 0):
-                self.winner = self.player_name
-            elif self.opponent and self.opponent.health > self.player.health:
-                self.winner = self.opponent.name
+            if self.player1.health > self.player2.health:
+                self.winner = self.player1.name
+            elif self.player2.health > self.player1.health:
+                self.winner = self.player2.name
             else:
                 self.winner = "Empate! Um pombo roubou a Queijada!"
         
-        # Get input
+        # Get input for both players
         keys = pygame.key.get_pressed()
         
-        # Update player
+        # Update players
         if self.game_started:
-            # Store previous health to detect damage
-            prev_health = self.player.health
+            # Player 1 controls (WASD + F/G/H)
+            player1_controls = {
+                "left": keys[pygame.K_a],
+                "right": keys[pygame.K_d],
+                "up": keys[pygame.K_w],
+                "down": keys[pygame.K_s],
+                "attack": keys[pygame.K_f],
+                "defend": keys[pygame.K_g],
+                "special": keys[pygame.K_h]
+            }
             
-            # Update player state
-            self.player.update(keys, self.opponent, self.buffs)
+            # Player 2 controls (Arrow keys + K/L/M)
+            player2_controls = {
+                "left": keys[pygame.K_LEFT],
+                "right": keys[pygame.K_RIGHT],
+                "up": keys[pygame.K_UP],
+                "down": keys[pygame.K_DOWN],
+                "attack": keys[pygame.K_k],
+                "defend": keys[pygame.K_l],
+                "special": keys[pygame.K_m]
+            }
             
-            # Calculate damage dealt this frame
-            damage_dealt = 0
-            if self.opponent:
-                damage_dealt = max(0, prev_health - self.opponent.health)
-                # Reduce damage by 50%
-                damage_dealt = damage_dealt * 0.5
+            # Update players
+            self.player1.update_local(player1_controls, self.player2, self.buffs)
+            self.player2.update_local(player2_controls, self.player1, self.buffs)
             
-            # Check for collisions with buffs and generate new ones only if host
-            if self.is_host:
-                # Check for collisions with buffs
-                for buff in self.buffs[:]:
-                    if buff.collides_with(self.player):
-                        self.player.add_buff(buff)
-                        self.buffs.remove(buff)
-                
-                # Generate new buffs occasionally
-                if random.random() < 0.005 and len(self.buffs) < 5:  # 0.5% chance per frame
-                    self.generate_buffs(1)
-        
-        # Send player data to server
-        player_data = {
-            "x": self.player.x,
-            "y": self.player.y,
-            "health": self.player.health,
-            "attacking": self.player.attacking,
-            "defending": self.player.defending,
-            "using_special": self.player.using_special,
-            "direction": self.player.direction,
-            "damage_dealt": damage_dealt,
-            "active_buffs": [b.to_dict() for b in self.player.active_buffs],
-            "special_cooldown": self.player.special_cooldown,
-            "buffs": [b.to_dict() for b in self.buffs] if self.is_host else [],
-            "current_time": self.current_time,
-            "game_over": self.game_over,
-            "winner": self.winner
-        }
-        
-        # Send data to server and get opponent data
-        opponent_data = self.network.send(player_data)
-        
-        if opponent_data is None:
-            self.connection_lost = True
-            self.connection_error_message = "Conexão com o servidor perdida!"
-            return
-        
-        if opponent_data and not self.opponent:
-            # First time we receive opponent data, create opponent
-            self.opponent = self.create_player(
-                opponent_data.get("class", 0),
-                opponent_data.get("name", "Opponent"),
-                is_opponent=True
-            )
+            # Check for collisions with buffs
+            for buff in self.buffs[:]:
+                if buff.collides_with(self.player1):
+                    self.player1.add_buff(buff)
+                    self.buffs.remove(buff)
+                elif buff.collides_with(self.player2):
+                    self.player2.add_buff(buff)
+                    self.buffs.remove(buff)
             
-            # Get initial game state
-            if "game_state" in opponent_data:
-                game_state = opponent_data["game_state"]
-                self.current_time = game_state.get("current_time", self.current_time)
-                self.game_started = game_state.get("game_started", False)
-                self.is_host = False  # If we're receiving game state, we're not the host
-                
-                # Sync buffs
-                self.buffs = []
-                for buff_data in game_state.get("buffs", []):
-                    self.buffs.append(Buff.from_dict(buff_data))
-        
-        # Update opponent with received data
-        if self.opponent and opponent_data:
-            self.opponent.x = opponent_data.get("x", self.opponent.x)
-            self.opponent.y = opponent_data.get("y", self.opponent.y)
-            self.opponent.health = opponent_data.get("health", self.opponent.health)
-            self.opponent.attacking = opponent_data.get("attacking", False)
-            self.opponent.defending = opponent_data.get("defending", False)
-            self.opponent.using_special = opponent_data.get("using_special", False)
-            self.opponent.direction = opponent_data.get("direction", self.opponent.direction)
-            self.opponent.special_cooldown = opponent_data.get("special_cooldown", 0)
-            
-            # Update opponent buffs
-            self.opponent.active_buffs = []
-            for buff_data in opponent_data.get("active_buffs", []):
-                self.opponent.active_buffs.append(Buff.from_dict(buff_data))
-            
-            # Apply damage from opponent
-            damage_received = opponent_data.get("damage_dealt", 0)
-            if damage_received > 0:
-                self.player.health = max(0, self.player.health - damage_received)
-            
-            # Sync game state
-            if "game_state" in opponent_data:
-                game_state = opponent_data["game_state"]
-                self.current_time = game_state.get("current_time", self.current_time)
-                
-                # Sync buffs if we're not the host
-                if not self.is_host:
-                    self.buffs = []
-                    for buff_data in game_state.get("buffs", []):
-                        self.buffs.append(Buff.from_dict(buff_data))
-            
-            # Sync game over state
-            if opponent_data.get("game_over", False):
-                self.game_over = True
-                self.winner = opponent_data.get("winner", "Oponente")
+            # Generate new buffs occasionally
+            if random.random() < 0.005 and len(self.buffs) < 5:  # 0.5% chance per frame
+                self.generate_buffs(1)
         
         # Check if either player is defeated
-        if self.game_started and (self.player.health <= 0 or (self.opponent and self.opponent.health <= 0)):
+        if self.game_started and (self.player1.health <= 0 or self.player2.health <= 0):
             self.game_over = True
-            if self.player.health <= 0:
-                self.winner = self.opponent.name if self.opponent else "Oponente"
+            if self.player1.health <= 0:
+                self.winner = self.player2.name
             else:
-                self.winner = self.player_name
+                self.winner = self.player1.name
     
     def draw(self):
         """Draw everything to the screen"""
@@ -250,11 +156,16 @@ class Game:
             text = self.font.render(f"Começando em {countdown}...", True, (255, 255, 255))
             text_rect = text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
             self.screen.blit(text, text_rect)
+            
+            # Draw controls
+            controls1 = self.small_font.render("Jogador 1: WASD (movimento) F (ataque) G (defesa) H (especial)", True, (255, 255, 255))
+            controls2 = self.small_font.render("Jogador 2: Setas (movimento) K (ataque) L (defesa) M (especial)", True, (255, 255, 255))
+            self.screen.blit(controls1, (50, 500))
+            self.screen.blit(controls2, (50, 530))
         
         # Draw players
-        self.player.draw(self.screen)
-        if self.opponent:
-            self.opponent.draw(self.screen)
+        self.player1.draw(self.screen)
+        self.player2.draw(self.screen)
         
         # Draw buffs
         for buff in self.buffs:
@@ -267,10 +178,6 @@ class Game:
         if self.game_over:
             self.draw_game_over()
         
-        # Draw connection lost message
-        if self.connection_lost:
-            self.draw_connection_lost()
-        
         pygame.display.flip()
     
     def draw_hud(self):
@@ -282,58 +189,31 @@ class Game:
         time_surface = self.font.render(time_text, True, (255, 255, 255))
         self.screen.blit(time_surface, (350, 20))
         
-        # Draw player health
-        health_text = f"{self.player_name}: {self.player.health}"
+        # Draw player1 health and buffs
+        health_text = f"{self.player1.name}: {self.player1.health}"
         health_surface = self.font.render(health_text, True, (255, 255, 255))
         self.screen.blit(health_surface, (50, 20))
         
-        # Draw player active buffs
+        # Draw player1 active buffs
         y_offset = 50
-        for buff in self.player.active_buffs:
+        for buff in self.player1.active_buffs:
             buff_text = f"{buff.buff_type.capitalize()}: {buff.duration // 60}s"
             buff_surface = self.small_font.render(buff_text, True, (255, 255, 0))
             self.screen.blit(buff_surface, (50, y_offset))
             y_offset += 20
         
-        # Draw opponent health if opponent exists
-        if self.opponent:
-            opp_health_text = f"{self.opponent.name}: {self.opponent.health}"
-            opp_health_surface = self.font.render(opp_health_text, True, (255, 255, 255))
-            self.screen.blit(opp_health_surface, (550, 20))
-    
-    def draw_easter_egg(self):
-        """Draw the Three Musketeers Easter Egg"""
-        overlay = pygame.Surface((self.screen.get_width(), self.screen.get_height()))
-        overlay.set_alpha(150)
-        overlay.fill((0, 0, 0))
-        self.screen.blit(overlay, (0, 0))
+        # Draw player2 health and buffs
+        health_text = f"{self.player2.name}: {self.player2.health}"
+        health_surface = self.font.render(health_text, True, (255, 255, 255))
+        self.screen.blit(health_surface, (550, 20))
         
-        text = self.font.render("Os Três Mosqueteiros aparecem!", True, (255, 255, 255))
-        text2 = self.font.render("Todos por um e um por todos!", True, (255, 255, 255))
-        
-        # Center the text
-        text_rect = text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 - 20))
-        text2_rect = text2.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 20))
-        
-        self.screen.blit(text, text_rect)
-        self.screen.blit(text2, text2_rect)
-    
-    def draw_connection_lost(self):
-        """Draw connection lost screen"""
-        overlay = pygame.Surface((self.screen.get_width(), self.screen.get_height()))
-        overlay.set_alpha(200)
-        overlay.fill((0, 0, 0))
-        self.screen.blit(overlay, (0, 0))
-        
-        error_text = self.font.render(self.connection_error_message, True, (255, 0, 0))
-        instruction_text = self.font.render("Pressione ENTER ou ESC para voltar ao menu", True, (255, 255, 255))
-        
-        # Center the text
-        error_rect = error_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 - 40))
-        instruction_rect = instruction_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 40))
-        
-        self.screen.blit(error_text, error_rect)
-        self.screen.blit(instruction_text, instruction_rect)
+        # Draw player2 active buffs
+        y_offset = 50
+        for buff in self.player2.active_buffs:
+            buff_text = f"{buff.buff_type.capitalize()}: {buff.duration // 60}s"
+            buff_surface = self.small_font.render(buff_text, True, (255, 255, 0))
+            self.screen.blit(buff_surface, (550, y_offset))
+            y_offset += 20
     
     def draw_game_over(self):
         """Draw game over screen"""
@@ -342,15 +222,12 @@ class Game:
         overlay.fill((0, 0, 0))
         self.screen.blit(overlay, (0, 0))
         
-        if self.winner == self.player_name:
-            text = "Vitória! Você conquistou a Queijada!"
-            color = (0, 255, 0)
-        elif self.winner == "Empate! Um pombo roubou a Queijada!":
+        if self.winner == "Empate! Um pombo roubou a Queijada!":
             text = self.winner
             color = (255, 255, 0)
         else:
-            text = "Derrota! Seu oponente ficou com a Queijada!"
-            color = (255, 0, 0)
+            text = f"{self.winner} conquistou a Queijada!"
+            color = (0, 255, 0)
         
         text_surface = self.font.render(text, True, color)
         text_rect = text_surface.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
@@ -362,8 +239,6 @@ class Game:
     
     def run(self):
         """Run the game loop"""
-        self.easter_egg_sequence = 0
-        
         while self.running:
             self.handle_events()
             self.update()

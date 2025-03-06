@@ -3,11 +3,11 @@ import random
 import math
 
 class Character:
-    def __init__(self, x, y, name, is_opponent=False):
+    def __init__(self, x, y, name, is_player2=False):
         self.x = x
         self.y = y
         self.name = name
-        self.is_opponent = is_opponent
+        self.is_player2 = is_player2
         self.width = 50
         self.height = 50
         self.speed = 5
@@ -23,7 +23,7 @@ class Character:
         self.attack_frame = 0
         self.attack_cooldown = 0
         self.attack_cooldown_max = 30  # 0.5 seconds between attacks
-        self.direction = -1 if is_opponent else 1
+        self.direction = -1 if is_player2 else 1
         self.active_buffs = []
         self.color = self.get_color()
         self.attack_hitbox = pygame.Rect(0, 0, 0, 0)
@@ -38,8 +38,8 @@ class Character:
     
     def move(self, keys):
         """Move the character based on key input"""
-        if self.is_opponent:
-            return  # Opponent movement is controlled by network updates
+        if self.is_player2:
+            return  # Player2 movement is controlled by local updates
         
         # Apply speed buff if any
         speed_multiplier = 1.0
@@ -67,7 +67,7 @@ class Character:
     
     def attack(self, keys, opponent):
         """Perform a basic attack"""
-        if self.is_opponent:
+        if self.is_player2:
             return
         
         if keys[pygame.K_SPACE] and not self.attacking and not self.defending and not self.using_special and self.attack_cooldown == 0:
@@ -100,14 +100,14 @@ class Character:
     
     def defend(self, keys):
         """Perform defense"""
-        if self.is_opponent:
+        if self.is_player2:
             return
         
         self.defending = keys[pygame.K_x] and not self.attacking and not self.using_special
     
     def use_special(self, keys, opponent):
         """Use special ability"""
-        if self.is_opponent:
+        if self.is_player2:
             return
         
         if keys[pygame.K_z] and not self.attacking and not self.defending and self.special_cooldown == 0:
@@ -177,17 +177,71 @@ class Character:
             if buff.duration <= 0:
                 self.active_buffs.remove(buff)
     
-    def update(self, keys, opponent, buffs):
-        """Update character state"""
-        if not self.is_opponent:
-            self.move(keys)
-            self.attack(keys, opponent)
-            self.defend(keys)
-            self.use_special(keys, opponent)
+    def get_speed(self):
+        """Get current speed, including buffs"""
+        speed_multiplier = 1.0
+        for buff in self.active_buffs:
+            if buff.buff_type == "speed":
+                speed_multiplier = 1.5
+                break
+        return self.speed * speed_multiplier
+    
+    def update_local(self, controls, opponent, buffs):
+        """Update character with local controls"""
+        if not self.attacking and not self.using_special:
+            # Movement
+            if controls["left"]:
+                self.x = max(0, self.x - self.get_speed())
+                self.direction = -1
+            if controls["right"]:
+                self.x = min(800 - self.width, self.x + self.get_speed())
+                self.direction = 1
+            if controls["up"]:
+                self.y = max(0, self.y - self.get_speed())
+            if controls["down"]:
+                self.y = min(600 - self.height, self.y + self.get_speed())
         
         # Update attack cooldown
         if self.attack_cooldown > 0:
             self.attack_cooldown -= 1
+        
+        # Attack
+        if controls["attack"] and not self.attacking and not self.using_special and self.attack_cooldown == 0:
+            self.attacking = True
+            self.attack_frame = 10
+            self.attack_cooldown = self.attack_cooldown_max
+            
+            # Create attack hitbox based on direction
+            attack_width = 80
+            attack_height = 60
+            if self.direction == -1:  # Facing left
+                self.attack_hitbox = pygame.Rect(self.x - attack_width, self.y, attack_width, attack_height)
+            else:  # Facing right
+                self.attack_hitbox = pygame.Rect(self.x + self.width, self.y, attack_width, attack_height)
+        
+        if self.attacking:
+            self.attack_frame -= 1
+            
+            # Check for hit during the attack animation
+            if opponent and self.attack_hitbox.colliderect(pygame.Rect(opponent.x, opponent.y, opponent.width, opponent.height)):
+                damage = self.calculate_attack_damage()
+                if opponent.defending:
+                    damage = max(0, damage - opponent.defense)
+                opponent.take_damage(damage)
+            
+            # End attack animation
+            if self.attack_frame <= 0:
+                self.attacking = False
+                self.attack_hitbox = pygame.Rect(0, 0, 0, 0)
+        
+        # Defense
+        self.defending = controls["defend"] and not self.attacking and not self.using_special
+        
+        # Special ability
+        if controls["special"] and not self.attacking and not self.defending and self.special_cooldown == 0:
+            self.using_special = True
+            self.special_ability(opponent)
+            self.special_cooldown = self.special_cooldown_max
         
         # Update special cooldown
         if self.special_cooldown > 0:
@@ -252,8 +306,8 @@ class Character:
 
 
 class Fighter(Character):
-    def __init__(self, x, y, name, is_opponent=False):
-        super().__init__(x, y, name, is_opponent)
+    def __init__(self, x, y, name, is_player2=False):
+        super().__init__(x, y, name, is_player2)
         self.health = 250
         self.attack_power = 25  # Higher attack power for Fighter
         self.defense = 8
@@ -287,8 +341,8 @@ class Fighter(Character):
 
 
 class Mage(Character):
-    def __init__(self, x, y, name, is_opponent=False):
-        super().__init__(x, y, name, is_opponent)
+    def __init__(self, x, y, name, is_player2=False):
+        super().__init__(x, y, name, is_player2)
         self.health = 180
         self.attack_power = 12
         self.defense = 4
@@ -323,8 +377,8 @@ class Mage(Character):
 
 
 class Archer(Character):
-    def __init__(self, x, y, name, is_opponent=False):
-        super().__init__(x, y, name, is_opponent)
+    def __init__(self, x, y, name, is_player2=False):
+        super().__init__(x, y, name, is_player2)
         self.health = 200
         self.attack_power = 8
         self.defense = 5
