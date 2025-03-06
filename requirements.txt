@@ -1,0 +1,9 @@
+--index-url https://pypi.org/simple
+--trusted-host pypi.org
+--trusted-host files.pythonhosted.org
+pygame==2.6.1 --only-binary pygame
+python-socketio==5.11.1
+aiohttp==3.9.3
+pymunk==6.6.0
+requests
+websocket-client
