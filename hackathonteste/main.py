@@ -1,362 +1,209 @@
 import pygame
 import sys
-import random
-import math
-from game import Game
-from level_manager import LevelManager
-
-# Initialize Pygame
-pygame.init()
-
-# Set up the display
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 820
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Batalha pela Queijada")
-
-# Colors
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-RED = (255, 0, 0)
-BLUE = (0, 0, 255)
-GREEN = (0, 255, 0)
-
-# Load background
-try:
-    background = pygame.image.load("./imagens_background/background.png").convert()
-    background = pygame.transform.scale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
-except:
-    # Fallback to a colored background if image fails to load
-    background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-    background.fill((50, 50, 50))
+from core.level_manager import LevelManager
+from core.game_core import Game
 
 class Menu:
     def __init__(self, screen):
         self.screen = screen
-        self.font = pygame.font.Font(None, 48)  # Larger main font
-        self.title_font = pygame.font.Font(None, 72)  # New font for title
-        self.small_font = pygame.font.Font(None, 24)
-        self.clock = pygame.time.Clock()
         self.running = True
+        self.font = pygame.font.Font(None, 36)
+        self.small_font = pygame.font.Font(None, 24)
+        self.title_font = pygame.font.Font(None, 72)
         
-        # Menu states
-        self.current_state = "intro"  # States: intro, character_select, controls
-        self.intro_alpha = 0  # For fade effect
-        self.fade_in = True
+        # Menu state
+        self.state = "main"  # main, character_select, controls, credits
         
-        # Story text
-        self.story_text = [
-            "Em uma terra distante de Portugal...",
-            "Uma lendária Queijada de Sintra foi criada com poderes místicos.",
-            "Dizem que quem a provar terá poderes inimagináveis...",
-            "Três guerreiros se apresentam para o desafio:",
-            "",
-            "O Cavaleiro de Óbidos",
-            "O Mago de Tomar",
-            "O Arqueiro de Sagres",
-            "",
-            "Pressione ESPAÇO para começar a batalha!"
-        ]
-        
-        # Player selection
-        self.player1_name = "Jogador 1"
-        self.player2_name = "Jogador 2"
+        # Character selection
         self.player1_class = 0  # 0: Fighter, 1: Mage, 2: Archer
         self.player2_class = 0
+        self.player1_name = "Jogador 1"
+        self.player2_name = "Jogador 2"
         
-        # Class descriptions with more lore
-        self.class_descriptions = {
-            0: "Cavaleiro de Óbidos: Treinado nas muralhas do castelo, domina a arte do combate próximo",
-            1: "Mago de Tomar: Guardião dos segredos dos Templários, mestre das artes arcanas",
-            2: "Arqueiro de Sagres: Discípulo da escola de navegação, preciso como as estrelas"
-        }
+        # Character preview images
+        self.character_images = self.load_character_images()
         
-        # Load character preview images
-        self.class_icons = {
-            0: self.load_character_preview("Knight"),    # Fighter/Knight
-            1: self.load_character_preview("Mage"),      # Mage
-            2: self.load_character_preview("Rogue")      # Archer/Rogue
-        }
-        
+        # Background
+        self.background = self.load_background()
+    
+    def load_background(self):
         try:
-            self.menu_background = pygame.image.load("./imagens_background/menu_background.png").convert()
-            self.menu_background = pygame.transform.scale(self.menu_background, (SCREEN_WIDTH, SCREEN_HEIGHT))
+            bg = pygame.image.load("./imagens_background/menu_bg.png").convert()
+            return pygame.transform.scale(bg, (self.screen.get_width(), self.screen.get_height()))
         except:
-            self.menu_background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-            self.menu_background.fill((30, 30, 50))  # Darker blue-ish background
+            # Fallback background
+            bg = pygame.Surface((self.screen.get_width(), self.screen.get_height()))
+            bg.fill((50, 50, 100))
+            return bg
     
-    def load_character_preview(self, character_type):
-        """Load and scale character preview image from idle animation"""
-        try:
-            # Try to load the first frame of the idle animation
-            base_path = "./imagens_characters/PNG"
-            character_path = f"{base_path}/{character_type}/Idle"
-            
-            # Print debug info
-            print(f"Trying to load character from: {character_path}")
-            
-            # List available files
-            import os
-            if os.path.exists(character_path):
-                files = sorted([f for f in os.listdir(character_path) if f.endswith('.png')])
-                if files:
-                    image_path = os.path.join(character_path, files[0])
-                    print(f"Loading image from: {image_path}")
-                    image = pygame.image.load(image_path).convert_alpha()
-                    # Scale the image to be larger for preview
-                    scaled_image = pygame.transform.scale(image, (200, 200))  # Made preview bigger
-                    return scaled_image
-                else:
-                    print(f"No PNG files found in {character_path}")
-            else:
-                print(f"Directory not found: {character_path}")
-            
-            raise FileNotFoundError(f"Could not load character preview for {character_type}")
-            
-        except Exception as e:
-            print(f"Error loading {character_type} preview: {str(e)}")
-            # Fallback to colored rectangle if image fails to load
-            icon = pygame.Surface((200, 200))  # Made fallback bigger too
-            icon.fill(RED if character_type == "Knight" else BLUE if character_type == "Mage" else GREEN)
-            return icon
+    def load_character_images(self):
+        images = []
+        character_types = ["Knight", "Mage", "Rogue"]
+        
+        for char_type in character_types:
+            try:
+                image_path = f"./imagens_characters/PNG/{char_type}/frame_{char_type.lower()}.png"
+                image = pygame.image.load(image_path).convert_alpha()
+                images.append(pygame.transform.scale(image, (150, 150)))
+            except:
+                # Fallback image
+                img = pygame.Surface((150, 150))
+                img.fill((200, 200, 200))
+                images.append(img)
+        
+        return images
     
-    def draw_button(self, text, x, y, width, height, color, hover=False):
-        """Draw a stylized button and return its rect"""
-        button_rect = pygame.Rect(x, y, width, height)
-        
-        # Draw button shadow
-        shadow_rect = pygame.Rect(x + 3, y + 3, width, height)
-        pygame.draw.rect(self.screen, (0, 0, 0, 128), shadow_rect)
-        
-        # Draw main button
-        pygame.draw.rect(self.screen, color, button_rect)
-        if hover:
-            pygame.draw.rect(self.screen, WHITE, button_rect, 3)
-        else:
-            pygame.draw.rect(self.screen, BLACK, button_rect, 2)
-        
-        # Draw text with shadow
-        text_surface = self.font.render(text, True, BLACK)
-        text_shadow = self.font.render(text, True, (50, 50, 50))
-        text_rect = text_surface.get_rect(center=button_rect.center)
-        self.screen.blit(text_shadow, (text_rect.x + 2, text_rect.y + 2))
-        self.screen.blit(text_surface, text_rect)
-        return button_rect
+    def handle_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+                pygame.quit()
+                sys.exit()
+            
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    if self.state == "main":
+                        self.running = False
+                    else:
+                        self.state = "main"
+                
+                if self.state == "main":
+                    if event.key == pygame.K_RETURN:
+                        self.state = "character_select"
+                    elif event.key == pygame.K_c:
+                        self.state = "controls"
+                    elif event.key == pygame.K_q:
+                        self.running = False
+                
+                elif self.state == "character_select":
+                    if event.key == pygame.K_LEFT:
+                        self.player1_class = (self.player1_class - 1) % 3
+                    elif event.key == pygame.K_RIGHT:
+                        self.player1_class = (self.player1_class + 1) % 3
+                    elif event.key == pygame.K_a:
+                        self.player2_class = (self.player2_class - 1) % 3
+                    elif event.key == pygame.K_d:
+                        self.player2_class = (self.player2_class + 1) % 3
+                    elif event.key == pygame.K_RETURN:
+                        return self.start_game()
     
-    def draw_intro(self):
-        """Draw the story intro screen"""
+    def draw(self):
         # Draw background
-        self.screen.blit(self.menu_background, (0, 0))
+        self.screen.blit(self.background, (0, 0))
         
-        # Create semi-transparent overlay
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        overlay.fill((0, 0, 0))
-        overlay.set_alpha(200)
-        self.screen.blit(overlay, (0, 0))
+        if self.state == "main":
+            self.draw_main_menu()
+        elif self.state == "character_select":
+            self.draw_character_select()
+        elif self.state == "controls":
+            self.draw_controls()
         
+        pygame.display.flip()
+    
+    def draw_main_menu(self):
         # Draw title
-        title = self.title_font.render("Batalha pela Queijada", True, (255, 215, 0))  # Golden color
-        title_shadow = self.title_font.render("Batalha pela Queijada", True, (100, 84, 0))
-        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 80))
-        self.screen.blit(title_shadow, (title_rect.x + 3, title_rect.y + 3))
+        title = self.title_font.render("Batalha pela Queijada", True, (255, 255, 255))
+        title_rect = title.get_rect(center=(self.screen.get_width() // 2, 100))
         self.screen.blit(title, title_rect)
         
-        # Draw story text with fade effect
-        for i, line in enumerate(self.story_text):
-            text_surface = self.small_font.render(line, True, WHITE)
-            text_surface.set_alpha(self.intro_alpha)
-            text_rect = text_surface.get_rect(center=(SCREEN_WIDTH // 2, 200 + i * 30))
-            self.screen.blit(text_surface, text_rect)
+        # Draw menu options
+        options = [
+            ("Pressione ENTER para jogar", (255, 255, 255)),
+            ("Pressione C para ver controles", (200, 200, 200)),
+            ("Pressione Q para sair", (200, 200, 200))
+        ]
         
-        # Update fade effect
-        if self.fade_in:
-            self.intro_alpha = min(255, self.intro_alpha + 3)
-        
-        # Draw "Press SPACE" with pulsing effect
-        if self.intro_alpha >= 255:
-            pulse = abs(math.sin(pygame.time.get_ticks() * 0.005)) * 255
-            space_text = self.font.render("Pressione ESPAÇO", True, (pulse, pulse, pulse))
-            space_rect = space_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 100))
-            self.screen.blit(space_text, space_rect)
+        for i, (text, color) in enumerate(options):
+            option = self.font.render(text, True, color)
+            option_rect = option.get_rect(center=(self.screen.get_width() // 2, 250 + i * 50))
+            self.screen.blit(option, option_rect)
     
     def draw_character_select(self):
-        """Draw the character selection screen"""
-        # Draw background
-        self.screen.blit(self.menu_background, (0, 0))
-        
-        # Draw semi-transparent overlay
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        overlay.fill((0, 0, 0))
-        overlay.set_alpha(150)
-        self.screen.blit(overlay, (0, 0))
-        
-        # Calculate dynamic spacing
-        vertical_space = SCREEN_HEIGHT - 150
-        
-        # Draw title at the top
-        title = self.title_font.render("Escolha seu Guerreiro", True, WHITE)
-        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 60))
+        # Draw title
+        title = self.font.render("Selecione os Personagens", True, (255, 255, 255))
+        title_rect = title.get_rect(center=(self.screen.get_width() // 2, 50))
         self.screen.blit(title, title_rect)
         
-        # Calculate player sections
-        player1_y = 180  # Fixed position for better control
-        player2_y = 480  # Fixed position with good separation
+        # Draw player 1 selection
+        p1_text = self.font.render("Jogador 1 (Setas)", True, (255, 255, 255))
+        p1_rect = p1_text.get_rect(center=(self.screen.get_width() // 4, 100))
+        self.screen.blit(p1_text, p1_rect)
         
-        # Draw player selections
-        self.player1_buttons = self.draw_class_selection(1, player1_y, self.player1_class)
-        self.player2_buttons = self.draw_class_selection(2, player2_y, self.player2_class)
+        # Draw player 2 selection
+        p2_text = self.font.render("Jogador 2 (A/D)", True, (255, 255, 255))
+        p2_rect = p2_text.get_rect(center=(self.screen.get_width() * 3 // 4, 100))
+        self.screen.blit(p2_text, p2_rect)
         
-        # Calculate the actual space needed for each player section (preview + button + description)
-        player_section_height = 120 + 40 + 60  # preview_size + button_height + extra_space
+        # Draw character images
+        self.screen.blit(self.character_images[self.player1_class], 
+                         (self.screen.get_width() // 4 - 75, 150))
+        self.screen.blit(self.character_images[self.player2_class], 
+                         (self.screen.get_width() * 3 // 4 - 75, 150))
         
-        # Calculate the divider position to be exactly between the bottom of player 1's section and top of player 2's section
-        player1_bottom = player1_y + player_section_height
-        player2_top = player2_y - 145  # Subtract the title spacing
-        divider_y = (player1_bottom + player2_top) // 2
+        # Draw character names
+        char_names = ["Cavaleiro", "Mago", "Arqueiro"]
         
-        divider_width = SCREEN_WIDTH * 0.7
-        divider_x = (SCREEN_WIDTH - divider_width) // 2
+        p1_char = self.font.render(char_names[self.player1_class], True, (255, 255, 255))
+        p1_char_rect = p1_char.get_rect(center=(self.screen.get_width() // 4, 320))
+        self.screen.blit(p1_char, p1_char_rect)
         
-        # Draw decorative divider
-        pygame.draw.line(self.screen, (255, 215, 0), 
-                        (divider_x, divider_y), 
-                        (divider_x + divider_width, divider_y), 
-                        2)  # Golden line
+        p2_char = self.font.render(char_names[self.player2_class], True, (255, 255, 255))
+        p2_char_rect = p2_char.get_rect(center=(self.screen.get_width() * 3 // 4, 320))
+        self.screen.blit(p2_char, p2_char_rect)
         
-        # Add decorative elements to the divider
-        circle_radius = 4
-        for x in range(int(divider_x), int(divider_x + divider_width), 100):
-            pygame.draw.circle(self.screen, (255, 215, 0), (x, divider_y), circle_radius)
-        
-        # Draw "VS" text in the middle of the divider
-        vs_font = pygame.font.Font(None, 60)
-        vs_text = vs_font.render("VS", True, (255, 215, 0))
-        vs_rect = vs_text.get_rect(center=(SCREEN_WIDTH // 2, divider_y))
-        # Draw shadow for VS text
-        vs_shadow = vs_font.render("VS", True, (100, 84, 0))
-        self.screen.blit(vs_shadow, (vs_rect.x + 2, vs_rect.y + 2))
-        self.screen.blit(vs_text, vs_rect)
-        
-        # Draw start button at the bottom
-        self.start_button = self.draw_button(
-            "Começar Batalha", 
-            SCREEN_WIDTH // 2 - 150,
-            SCREEN_HEIGHT - 80,
-            300, 50,
-            (255, 215, 0),
-            self.start_button.collidepoint(pygame.mouse.get_pos()) if hasattr(self, 'start_button') else False
-        )
+        # Draw start instruction
+        start_text = self.font.render("Pressione ENTER para iniciar", True, (255, 255, 0))
+        start_rect = start_text.get_rect(center=(self.screen.get_width() // 2, 400))
+        self.screen.blit(start_text, start_rect)
     
-    def draw_class_selection(self, player_num, y_pos, current_class):
-        """Draw class selection for a player with icons and descriptions"""
-        # Calculate dynamic sizes and spacing
-        content_width = SCREEN_WIDTH * 0.7
-        margin_x = (SCREEN_WIDTH - content_width) // 2
+    def draw_controls(self):
+        # Draw title
+        title = self.font.render("Controles", True, (255, 255, 255))
+        title_rect = title.get_rect(center=(self.screen.get_width() // 2, 50))
+        self.screen.blit(title, title_rect)
         
-        # Calculate button and spacing dimensions
-        button_width = int(content_width * 0.25)
-        button_height = 40
-        spacing = (content_width - (button_width * 3)) // 4
+        # Draw controls for player 1
+        p1_text = self.font.render("Jogador 1", True, (255, 255, 255))
+        p1_rect = p1_text.get_rect(center=(self.screen.get_width() // 4, 100))
+        self.screen.blit(p1_text, p1_rect)
         
-        buttons = []
-        classes = ["Cavaleiro", "Mago", "Arqueiro"]
-        colors = [(200, 50, 50), (50, 50, 200), (50, 200, 50)]
+        p1_controls = [
+            "Movimento: WASD",
+            "Ataque: F",
+            "Defesa: G",
+            "Especial: H"
+        ]
         
-        # Calculate preview image size
-        preview_size = 120  # Slightly smaller preview size
+        for i, control in enumerate(p1_controls):
+            text = self.small_font.render(control, True, (200, 200, 200))
+            rect = text.get_rect(center=(self.screen.get_width() // 4, 150 + i * 30))
+            self.screen.blit(text, rect)
         
-        for i, (class_name, color) in enumerate(zip(classes, colors)):
-            x_pos = margin_x + spacing + (i * (button_width + spacing))
-            
-            if i == current_class:
-                color = tuple(min(c + 100, 255) for c in color)
-            
-            # Draw character preview image
-            icon = self.class_icons[i]
-            scaled_icon = pygame.transform.scale(icon, (preview_size, preview_size))
-            icon_rect = scaled_icon.get_rect(center=(x_pos + button_width//2, y_pos))
-            self.screen.blit(scaled_icon, icon_rect)
-            
-            # Draw selection border if selected
-            if i == current_class:
-                border_rect = icon_rect.inflate(8, 8)
-                pygame.draw.rect(self.screen, (255, 215, 0), border_rect, 4)
-                
-                # Draw player indicator (P1/P2) above the selected character
-                player_text = self.font.render(f"P{player_num}", True, (255, 215, 0))
-                # Add a black outline/shadow for better visibility
-                player_shadow = self.font.render(f"P{player_num}", True, (0, 0, 0))
-                text_rect = player_text.get_rect(center=(x_pos + button_width//2, y_pos - preview_size//2 - 20))
-                
-                # Draw shadow/outline
-                for dx, dy in [(-2, -2), (-2, 2), (2, -2), (2, 2)]:
-                    self.screen.blit(player_shadow, (text_rect.x + dx, text_rect.y + dy))
-                # Draw main text
-                self.screen.blit(player_text, text_rect)
-            
-            # Draw button below preview
-            button_y = y_pos + preview_size//2 + 10
-            button = self.draw_button(
-                class_name,
-                x_pos,
-                button_y,
-                button_width,
-                button_height,
-                color
-            )
-            buttons.append(button)
+        # Draw controls for player 2
+        p2_text = self.font.render("Jogador 2", True, (255, 255, 255))
+        p2_rect = p2_text.get_rect(center=(self.screen.get_width() * 3 // 4, 100))
+        self.screen.blit(p2_text, p2_rect)
         
-        # Draw class description centered below buttons
-        desc = self.small_font.render(self.class_descriptions[current_class], True, WHITE)
-        desc_rect = desc.get_rect(center=(SCREEN_WIDTH // 2, y_pos + preview_size//2 + button_height + 30))
-        self.screen.blit(desc, desc_rect)
+        p2_controls = [
+            "Movimento: Setas",
+            "Ataque: K",
+            "Defesa: L",
+            "Especial: M"
+        ]
         
-        return buttons
-    
-    def run(self):
-        """Run the menu"""
-        while self.running:
-            mouse_pos = pygame.mouse.get_pos()
-            
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-                
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_SPACE and self.current_state == "intro":
-                        self.current_state = "character_select"
-                
-                if event.type == pygame.MOUSEBUTTONDOWN and self.current_state == "character_select":
-                    # Player 1 class selection
-                    for i, button in enumerate(self.player1_buttons):
-                        if button.collidepoint(mouse_pos):
-                            self.player1_class = i
-                    
-                    # Player 2 class selection
-                    for i, button in enumerate(self.player2_buttons):
-                        if button.collidepoint(mouse_pos):
-                            self.player2_class = i
-                    
-                    # Start game button
-                    if self.start_button.collidepoint(mouse_pos):
-                        return self.start_game()
-            
-            # Draw current menu state
-            if self.current_state == "intro":
-                self.draw_intro()
-            elif self.current_state == "character_select":
-                self.draw_character_select()
-            
-            pygame.display.flip()
-            self.clock.tick(60)
+        for i, control in enumerate(p2_controls):
+            text = self.small_font.render(control, True, (200, 200, 200))
+            rect = text.get_rect(center=(self.screen.get_width() * 3 // 4, 150 + i * 30))
+            self.screen.blit(text, rect)
+        
+        # Draw back instruction
+        back_text = self.font.render("Pressione ESC para voltar", True, (255, 255, 0))
+        back_rect = back_text.get_rect(center=(self.screen.get_width() // 2, 400))
+        self.screen.blit(back_text, back_rect)
     
     def start_game(self):
-        """Start the game with selected characters"""
-        # Create level manager
+        """Inicia o jogo com os personagens selecionados"""
         level_manager = LevelManager()
-        
-        # Create game instance with level manager
         game = Game(
             self.screen,
             self.player1_class,
@@ -365,14 +212,25 @@ class Menu:
             self.player2_name,
             level_manager
         )
-        
-        # Run game loop
         game.run()
+        return True
+    
+    def run(self):
+        while self.running:
+            self.handle_events()
+            self.draw()
+            pygame.time.delay(30)
 
 def main():
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.init()
+    screen = pygame.display.set_mode((1280, 720))
+    pygame.display.set_caption("Batalha pela Queijada")
+    
     menu = Menu(screen)
     menu.run()
+    
+    pygame.quit()
+    sys.exit()
 
 if __name__ == "__main__":
     main() 
