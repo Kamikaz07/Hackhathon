@@ -83,7 +83,7 @@ class Game:
         """Create a player based on the selected class"""
         # Posições iniciais ajustadas para começar em cima da plataforma principal
         x = 250 if not is_player2 else 550
-        y = 400  # Um pouco acima da plataforma principal
+        y = 300  # Um pouco acima da plataforma principal
         
         if class_id == 0:  # Fighter
             return Fighter(x, y, name, is_player2)
