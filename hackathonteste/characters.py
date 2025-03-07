@@ -954,6 +954,16 @@ class Archer(Character):
         self.height = 100
         self.base_knockback = 1.5
         
+        # Sistema de energia
+        self.energy = 100
+        self.max_energy = 100
+        self.energy_regen = 0.4  # Regeneração de energia por frame
+        
+        # Custos de energia
+        self.dash_energy_cost = 25
+        self.push_energy_cost = 15
+        self.double_jump_energy_cost = 10
+        
         # Rogue specific attributes
         self.can_climb = True
         self.climbing = False
@@ -972,6 +982,9 @@ class Archer(Character):
     
     def update_local(self, controls, opponent, buffs, platforms):
         """Update with enhanced movement and abilities"""
+        # Regeneração de energia
+        self.energy = min(self.max_energy, self.energy + self.energy_regen)
+        
         # Reset combo if timer expires
         if self.combo_timer > 0:
             self.combo_timer -= 1
@@ -1004,15 +1017,16 @@ class Archer(Character):
         elif self.climbing and not controls["up"]:
             self.climbing = False
         
-        # Double jump
+        # Double jump com custo de energia
         if controls["up"]:
             if self.on_ground:
                 self.velocity_y = self.jump_force
                 self.double_jump_available = True
                 self.state = "jump"
-            elif self.double_jump_available and not self.climbing:
+            elif self.double_jump_available and not self.climbing and self.energy >= self.double_jump_energy_cost:
                 self.velocity_y = self.jump_force * 0.8
                 self.double_jump_available = False
+                self.energy -= self.double_jump_energy_cost
                 self.state = "high_jump"
         
         # Combat system with combos
@@ -1039,10 +1053,11 @@ class Archer(Character):
                 opponent.take_damage(damage)
                 self.apply_knockback(self.direction, damage)
         
-        # Push ability
-        if controls["defend"] and self.push_cooldown <= 0:
+        # Push ability com custo de energia
+        if controls["defend"] and self.push_cooldown <= 0 and self.energy >= self.push_energy_cost:
             self.state = "push"  # Set animation state to push
             self.push_cooldown = self.push_cooldown_max
+            self.energy -= self.push_energy_cost
             # Add visual effect for push
             self.add_visual_effect("dash", 10)  # Reuse dash effect for push visualization
             
@@ -1051,11 +1066,12 @@ class Archer(Character):
                 opponent.velocity_x = self.direction * push_power
                 opponent.velocity_y = -5
         
-        # Special ability (dash attack)
-        if controls["special"] and not self.using_special and self.special_cooldown <= 0:
+        # Special ability (dash attack) com custo de energia
+        if controls["special"] and not self.using_special and self.dash_cooldown <= 0 and self.energy >= self.dash_energy_cost:
             self.using_special = True
             self.special_frame = 0  # Reset frame counter
-            self.special_cooldown = self.special_cooldown_max
+            self.dash_cooldown = self.dash_cooldown_max
+            self.energy -= self.dash_energy_cost
             self.state = "run_attack"
             dash_speed = 20
             self.velocity_x = self.direction * dash_speed
@@ -1091,9 +1107,10 @@ class Archer(Character):
     
     def special_ability(self, opponent):
         """Rogue's special ability: Dash Attack"""
-        if self.dash_cooldown <= 0:
+        if self.dash_cooldown <= 0 and self.energy >= self.dash_energy_cost:
             self.state = "run_attack"
             self.dash_cooldown = self.dash_cooldown_max
+            self.energy -= self.dash_energy_cost
             dash_speed = 20
             self.velocity_x = self.direction * dash_speed
             
@@ -1105,6 +1122,8 @@ class Archer(Character):
                 opponent.velocity_y = -8
             
             self.using_special = False
+            return self.special_damage
+        return 0
     
     def get_color(self):
         """Archer's unique color"""

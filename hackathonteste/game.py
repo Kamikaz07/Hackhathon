@@ -237,26 +237,40 @@ class Game:
         if self.player1_lives <= 0:
             # Player 2 vence porque player 1 ficou sem vidas
             level_winner = 2
+            self.level_manager.player2_wins += 1
         elif self.player2_lives <= 0:
             # Player 1 vence porque player 2 ficou sem vidas
             level_winner = 1
+            self.level_manager.player1_wins += 1
         else:
             # Ambos ainda têm vidas, então compara a porcentagem de dano
             if self.player1.health < self.player2.health:
                 level_winner = 1
+                self.level_manager.player1_wins += 1
             elif self.player2.health < self.player1.health:
                 level_winner = 2
+                self.level_manager.player2_wins += 1
             else:
                 # Empate, escolhe aleatoriamente
                 level_winner = random.choice([1, 2])
+                if level_winner == 1:
+                    self.level_manager.player1_wins += 1
+                else:
+                    self.level_manager.player2_wins += 1
         
         # Avança para o próximo nível
         self.level_manager.current_level += 1
         
         # Verifica se o jogo acabou (todos os níveis completados)
-        if self.level_manager.current_level >= len(self.level_manager.levels):
+        if self.level_manager.current_level >= 5:  # Termina após o 5º nível
             self.game_over = True
-            self.winner = self.player1_name if level_winner == 1 else self.player2_name
+            # Determina o vencedor final com base no número total de vitórias
+            if self.level_manager.player1_wins > self.level_manager.player2_wins:
+                self.winner = self.player1_name
+            elif self.level_manager.player2_wins > self.level_manager.player1_wins:
+                self.winner = self.player2_name
+            else:
+                self.winner = "Empate! Um pombo roubou a Queijada!"
         else:
             # Reseta as vidas para o próximo nível
             self.player1_lives = 3
@@ -396,11 +410,11 @@ class Game:
             hp_surf = pygame.transform.chop(self.hp_bar, (hp_width, 0, 200-hp_width, 0))
             self.screen.blit(hp_surf, hp_rect)
         
-        # Draw MP/Stamina bar
+        # Draw MP/Stamina/Energy bar
         mp_bar_scaled = pygame.transform.scale(self.mp_bar, (200, 10))  # Redimensionado para 200x10
         self.screen.blit(mp_bar_scaled, (bar_x, mp_y))
         
-        # Desenha nível atual de mana/stamina
+        # Desenha nível atual de mana/stamina/energy
         mp_level = 0
         if isinstance(player, Mage):
             mp_level = (player.mana / player.max_mana) * 200
@@ -408,6 +422,9 @@ class Game:
         elif isinstance(player, Fighter):
             mp_level = (player.stamina / player.max_stamina) * 200
             mp_color = (255, 255, 0)  # Amarelo para stamina
+        elif isinstance(player, Archer):
+            mp_level = (player.energy / player.max_energy) * 200
+            mp_color = (0, 255, 0)  # Verde para energia
         else:
             mp_level = 0  # Para outros personagens
         
@@ -435,10 +452,16 @@ class Game:
     def draw_game_over(self):
         """Draw game over screen"""
         overlay = pygame.Surface((self.screen.get_width(), self.screen.get_height()))
-        overlay.set_alpha(128)
+        overlay.set_alpha(180)  # Mais opaco para melhor legibilidade
         overlay.fill((0, 0, 0))
         self.screen.blit(overlay, (0, 0))
         
+        # Título "Fim de Jogo"
+        title_text = self.font.render("FIM DE JOGO", True, (255, 255, 255))
+        title_rect = title_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 - 100))
+        self.screen.blit(title_text, title_rect)
+        
+        # Texto do vencedor
         if self.winner == "Empate! Um pombo roubou a Queijada!":
             text = self.winner
             color = (255, 255, 0)
@@ -447,11 +470,22 @@ class Game:
             color = (0, 255, 0)
         
         text_surface = self.font.render(text, True, color)
-        text_rect = text_surface.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
+        text_rect = text_surface.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 - 40))
         self.screen.blit(text_surface, text_rect)
         
+        # Placar final
+        score_text = self.font.render(f"Placar Final: {self.player1_name} {self.level_manager.player1_wins} x {self.level_manager.player2_wins} {self.player2_name}", True, (255, 255, 255))
+        score_rect = score_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 20))
+        self.screen.blit(score_text, score_rect)
+        
+        # Texto adicional sobre o fim do jogo
+        completed_text = self.small_font.render("Todos os 5 níveis foram completados!", True, (255, 255, 255))
+        completed_rect = completed_text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 60))
+        self.screen.blit(completed_text, completed_rect)
+        
+        # Instrução para voltar ao menu
         instruction = self.small_font.render("Pressione ESC para voltar ao menu", True, (255, 255, 255))
-        instruction_rect = instruction.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 50))
+        instruction_rect = instruction.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 100))
         self.screen.blit(instruction, instruction_rect)
     
     def draw_controls_guide(self):
@@ -533,14 +567,16 @@ class Game:
                 y = draw_control_line("  (Dano crescente)", y, (75, 200, 75))
                 y = draw_control_line("- Ataque + Movimento: Ataque Rápido", y)
                 y = draw_control_line("  (Golpes enquanto corre)", y, (75, 200, 75))
-                y = draw_control_line("- Especial: Dash Attack", y)
+                y = draw_control_line("- Especial: Dash Attack (25 energia)", y)
                 y = draw_control_line("  (Avanço com dano)", y, (75, 200, 75))
-                y = draw_control_line("- Defesa: Empurrão", y)
+                y = draw_control_line("- Defesa: Empurrão (15 energia)", y)
                 y = draw_control_line("  (Cria distância)", y, (75, 200, 75))
-                y = draw_control_line("- Pulo Duplo", y)
+                y = draw_control_line("- Pulo Duplo (10 energia)", y)
                 y = draw_control_line("  (Melhor mobilidade)", y, (75, 200, 75))
                 y = draw_control_line("- Velocidade Aumentada", y)
                 y = draw_control_line("  (Mais rápido que outros)", y, (75, 200, 75))
+                y = draw_control_line("- Barra verde: Energia", y)
+                y = draw_control_line("  (Regenera com tempo)", y, (75, 200, 75))
             
             y += margin  # Add space between players
         

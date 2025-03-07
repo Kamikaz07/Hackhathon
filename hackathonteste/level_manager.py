@@ -113,7 +113,9 @@ class Level:
 class LevelManager:
     def __init__(self):
         self.current_level = 0
-        self.total_levels = 5
+        self.total_levels = 5  # Total de níveis no jogo
+        self.player1_wins = 0
+        self.player2_wins = 0
         self.levels = []
         self.initialize_levels()
         
@@ -121,10 +123,6 @@ class LevelManager:
         self.current_round = 1
         self.rounds_per_level = 2
         self.total_rounds = self.total_levels * self.rounds_per_level
-        
-        # Score tracking
-        self.player1_wins = 0
-        self.player2_wins = 0
     
     def initialize_levels(self):
         """Initialize all level data"""
@@ -173,7 +171,7 @@ class LevelManager:
             (center_x - 400, 600, Platform.GROUND)    # Ground
         ]
         spawn_points4 = [(center_x - 250, 300), (center_x + 250, 300)]
-        self.levels.append(Level("./imagens_background/background4.png", level4_platforms, spawn_points4))
+        self.levels.append(Level("./imagens_background/background4.jpg", level4_platforms, spawn_points4))
         
         # Level 5 - Final Arena
         level5_platforms = [
@@ -186,11 +184,13 @@ class LevelManager:
             (center_x - 400, 600, Platform.GROUND)    # Ground
         ]
         spawn_points5 = [(center_x - 250, 350), (center_x + 250, 350)]
-        self.levels.append(Level("./imagens_background/background5.png", level5_platforms, spawn_points5))
+        self.levels.append(Level("./imagens_background/background5.jpg", level5_platforms, spawn_points5))
     
     def get_current_level(self):
         """Get the current level object"""
-        return self.levels[self.current_level]
+        # Garantir que o índice não ultrapasse o número de níveis disponíveis
+        safe_index = min(self.current_level, len(self.levels) - 1)
+        return self.levels[safe_index]
     
     def get_spawn_points(self):
         """Get spawn points for current level"""
