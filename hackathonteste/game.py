@@ -139,8 +139,9 @@ class Game:
         if self.game_started and self.current_time > 0:
             self.current_time -= 1
         elif self.game_started and self.current_time <= 0:
-            self.round_over = True
+            # Tempo acabou, determina o vencedor com base no dano atual
             self.determine_round_winner()
+            return
         
         # Get input for both players
         keys = pygame.key.get_pressed()
@@ -150,9 +151,56 @@ class Game:
             # Check for out of bounds
             for player in [self.player1, self.player2]:
                 if player.y > 800:  # If player falls off screen
-                    self.round_over = True
+                    if player == self.player1:
+                        self.player1_lives -= 1
+                        player.lives = self.player1_lives
+                    else:
+                        self.player2_lives -= 1
+                        player.lives = self.player2_lives
+                    
+                    # Reposiciona o jogador se ainda tiver vidas
+                    if (player == self.player1 and self.player1_lives > 0) or (player == self.player2 and self.player2_lives > 0):
+                        spawn_points = self.level_manager.get_spawn_points()
+                        if player == self.player1:
+                            player.x, player.y = spawn_points[0]
+                        else:
+                            player.x, player.y = spawn_points[1]
+                        player.rect.x, player.rect.y = player.x, player.y
+                        player.velocity_y = 0
+                        player.health = 0  # Reseta o dano ao respawnar
+                    
+                    # Verifica se algum jogador ficou sem vidas
+                    if self.player1_lives <= 0 or self.player2_lives <= 0:
+                        self.determine_round_winner()
+                        return
+
+            # Verifica se algum jogador atingiu o limite de dano
+            if self.player1.health >= self.player1.max_health:
+                self.player1_lives -= 1
+                if self.player1_lives <= 0:
                     self.determine_round_winner()
+                    return
+                else:
+                    # Respawn com uma vida a menos
+                    spawn_points = self.level_manager.get_spawn_points()
+                    self.player1.x, self.player1.y = spawn_points[0]
+                    self.player1.rect.x, self.player1.rect.y = self.player1.x, self.player1.y
+                    self.player1.velocity_y = 0
+                    self.player1.health = 0
             
+            if self.player2.health >= self.player2.max_health:
+                self.player2_lives -= 1
+                if self.player2_lives <= 0:
+                    self.determine_round_winner()
+                    return
+                else:
+                    # Respawn com uma vida a menos
+                    spawn_points = self.level_manager.get_spawn_points()
+                    self.player2.x, self.player2.y = spawn_points[1]
+                    self.player2.rect.x, self.player2.rect.y = self.player2.x, self.player2.y
+                    self.player2.velocity_y = 0
+                    self.player2.health = 0
+
             # Player controls
             player1_controls = {
                 "left": keys[pygame.K_a],
@@ -184,37 +232,35 @@ class Game:
             self.determine_round_winner()
     
     def determine_round_winner(self):
-        """Determine the winner of the current round"""
-        # Determine winner based on health percentage
-        if self.player1.health < self.player2.health:
-            winner = 1
-            self.player1_lives -= 1
-        elif self.player2.health < self.player1.health:
-            winner = 2
-            self.player2_lives -= 1
+        """Determina o vencedor do nível atual e avança para o próximo"""
+        # Determina o vencedor com base nas vidas restantes ou na porcentagem de dano
+        if self.player1_lives <= 0:
+            # Player 2 vence porque player 1 ficou sem vidas
+            level_winner = 2
+        elif self.player2_lives <= 0:
+            # Player 1 vence porque player 2 ficou sem vidas
+            level_winner = 1
         else:
-            winner = random.choice([1, 2])
-            if winner == 1:
-                self.player1_lives -= 1
+            # Ambos ainda têm vidas, então compara a porcentagem de dano
+            if self.player1.health < self.player2.health:
+                level_winner = 1
+            elif self.player2.health < self.player1.health:
+                level_winner = 2
             else:
-                self.player2_lives -= 1
+                # Empate, escolhe aleatoriamente
+                level_winner = random.choice([1, 2])
         
-        # Check if either player is out of lives in this round
-        if self.player1_lives <= 0 or self.player2_lives <= 0:
-            # Update level manager with round result
-            game_ended = self.level_manager.next_round(winner)
-            
-            if game_ended:
-                self.game_over = True
-                final_winner = self.level_manager.get_winner()
-                self.winner = self.player1_name if final_winner == 1 else self.player2_name
-            else:
-                # Reset lives for new round/map
-                self.player1_lives = 3
-                self.player2_lives = 3
-                self.initialize_round()
+        # Avança para o próximo nível
+        self.level_manager.current_level += 1
+        
+        # Verifica se o jogo acabou (todos os níveis completados)
+        if self.level_manager.current_level >= len(self.level_manager.levels):
+            self.game_over = True
+            self.winner = self.player1_name if level_winner == 1 else self.player2_name
         else:
-            # Continue same round with remaining lives
+            # Reseta as vidas para o próximo nível
+            self.player1_lives = 3
+            self.player2_lives = 3
             self.initialize_round()
     
     def draw(self):
@@ -241,15 +287,19 @@ class Game:
         # Draw HUD
         self.draw_hud()
         
-        # Draw round and level info
-        round_text = self.level_manager.get_round_text()
-        score_text = self.level_manager.get_score_text()
+        # Draw time remaining
+        minutes = self.current_time // (60 * 60)
+        seconds = (self.current_time // 60) % 60
+        time_text = f"Tempo: {minutes:02d}:{seconds:02d}"
+        time_surface = self.font.render(time_text, True, (255, 255, 255))
+        time_x = self.screen.get_width()//2 - time_surface.get_width()//2
+        self.screen.blit(time_surface, (time_x, 20))
         
-        round_surface = self.font.render(round_text, True, (255, 255, 255))
-        score_surface = self.font.render(score_text, True, (255, 255, 255))
-        
-        self.screen.blit(round_surface, (10, 10))
-        self.screen.blit(score_surface, (10, 50))
+        # Draw level info below time
+        level_text = f"Nível {self.level_manager.current_level + 1}/5"
+        level_surface = self.font.render(level_text, True, (255, 255, 0))
+        level_x = self.screen.get_width()//2 - level_surface.get_width()//2
+        self.screen.blit(level_surface, (level_x, 60))
         
         # Draw game over screen if game is over
         if self.game_over:
@@ -366,7 +416,10 @@ class Game:
         # Draw hearts for lives
         heart_start_x = x + (10 if flip else 10)
         heart_y = y + 90
-        for i in range(player.lives):
+        
+        # Usar as vidas do Game em vez das vidas do player
+        lives_to_show = self.player1_lives if player == self.player1 else self.player2_lives
+        for i in range(lives_to_show):
             heart_x = heart_start_x + (i * 20)  # Reduzido espaçamento para 20px
             self.screen.blit(self.heart_image, (heart_x, heart_y))
         
@@ -510,7 +563,7 @@ class Game:
         platform_images = {}
         try:
             # Carrega a imagem da plataforma de pedra
-            platform = pygame.image.load("./imagens_background/barra_pedra.png").convert_alpha()
+            platform = pygame.image.load("./imagens_background/barra_castanha.png").convert_alpha()
             
             # Redimensiona as imagens para o tamanho correto
             platform_images["large"] = pygame.transform.scale(platform, (500, 40))
