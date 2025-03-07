@@ -2,6 +2,7 @@ import pygame
 import sys
 import random
 import math
+import json
 from characters import Character, Fighter, Mage, Archer
 from buff import Buff
 
@@ -46,10 +47,12 @@ class Game:
         
         # Game settings
         self.fps = 60
-        self.round_time = 360 * 360  # 1 minute per round
+        self.round_time = 360 * 60  # 1 minute per round
         self.current_time = self.round_time
         self.game_over = False
         self.winner = None
+        self.winner_class = None
+        self.loser = None
         self.respawn_delay = 120  # 2 seconds for respawn
         self.respawn_timer = 0
         
@@ -78,6 +81,12 @@ class Game:
             self.mp_bar = None
             self.heart_image = None
             self.portraits = {}
+        
+        # Load sound effects
+        self.sounds = {
+            "victory": self.load_sound("victory.wav"),
+            "defeat": self.load_sound("defeat.wav")
+        }
     
     def create_player(self, class_id, name, is_player2=False):
         """Create a player based on the selected class"""
@@ -132,14 +141,57 @@ class Game:
             # Determine winner based on lives and percentage
             if self.player1.lives > self.player2.lives:
                 self.winner = self.player1.name
+                self.winner_class = self.player1_class
+                self.loser = self.player2.name
             elif self.player2.lives > self.player1.lives:
                 self.winner = self.player2.name
+                self.winner_class = self.player2_class
+                self.loser = self.player1.name
             elif self.player1.health < self.player2.health:
                 self.winner = self.player1.name
+                self.winner_class = self.player1_class
+                self.loser = self.player2.name
             elif self.player2.health < self.player1.health:
                 self.winner = self.player2.name
+                self.winner_class = self.player2_class
+                self.loser = self.player1.name
             else:
-                self.winner = "Empate! Um pombo roubou a Queijada!"
+                self.winner = "Empate"
+                self.winner_class = None
+                self.loser = None
+            
+            # Play victory/defeat sound
+            if self.winner != "Empate":
+                if self.sounds["victory"]:
+                    self.sounds["victory"].play()
+            
+            # Save to rankings if not a tie
+            if self.winner != "Empate":
+                try:
+                    with open("rankings.json", "r") as f:
+                        rankings = json.load(f)
+                except:
+                    rankings = []
+                
+                # Add new ranking entry
+                rankings.append({
+                    "winner": self.winner,
+                    "winner_class": self.winner_class,
+                    "loser": self.loser,
+                    "time": self.round_time - self.current_time,
+                    "date": pygame.time.get_ticks()
+                })
+                
+                # Sort by time and keep top 10
+                rankings.sort(key=lambda x: x["time"])
+                rankings = rankings[:10]
+                
+                # Save updated rankings
+                try:
+                    with open("rankings.json", "w") as f:
+                        json.dump(rankings, f)
+                except:
+                    print("Could not save rankings")
         
         # Get input for both players
         keys = pygame.key.get_pressed()
@@ -385,8 +437,8 @@ class Game:
         overlay.fill((0, 0, 0))
         self.screen.blit(overlay, (0, 0))
         
-        if self.winner == "Empate! Um pombo roubou a Queijada!":
-            text = self.winner
+        if self.winner == "Empate":
+            text = "Empate! Um pombo roubou a Queijada!"
             color = (255, 255, 0)
         else:
             text = f"{self.winner} conquistou a Queijada!"
@@ -536,6 +588,16 @@ class Game:
         # Adiciona borda
         pygame.draw.rect(surface, (101, 67, 33), pygame.Rect(0, 0, width, height), 3)
         return surface
+    
+    def load_sound(self, filename):
+        """Load a sound effect"""
+        try:
+            sound = pygame.mixer.Sound(f"./imagens_background/sounds/{filename}")
+            sound.set_volume(0.3)
+            return sound
+        except:
+            print(f"Could not load sound: {filename}")
+            return None
     
     def run(self):
         """Run the game loop"""

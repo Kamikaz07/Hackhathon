@@ -1,3 +1,4 @@
 pygame==2.5.2
 numpy==1.26.0
 pygame-menu==4.4.3 
+Pillow==11.1.0
