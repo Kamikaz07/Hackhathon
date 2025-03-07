@@ -2,10 +2,34 @@ import pygame
 import random
 
 class Platform:
-    def __init__(self, x, y, width, height):
+    # Tamanhos predefinidos
+    SMALL = "small"
+    MEDIUM = "medium"
+    LARGE = "large"
+    GROUND = "ground"
+    
+    # Dimensões para cada tipo
+    SIZES = {
+        SMALL: (150, 40),
+        MEDIUM: (300, 40),
+        LARGE: (500, 40),
+        GROUND: (800, 40)
+    }
+    
+    def __init__(self, x, y, platform_type):
+        """
+        Inicializa uma plataforma com tamanho predefinido
+        
+        Args:
+            x, y: Posição da plataforma
+            platform_type: Tipo da plataforma (SMALL, MEDIUM, LARGE ou GROUND)
+        """
+        width, height = self.SIZES.get(platform_type, self.SIZES[self.MEDIUM])
         self.rect = pygame.Rect(x, y, width, height)
+        self.platform_type = platform_type
+        
         try:
-            self.image = pygame.image.load("./imagens_background/barra_castanha.png").convert_alpha()
+            self.image = pygame.image.load("./imagens_background/plataformateste.png").convert_alpha()
             self.image = pygame.transform.scale(self.image, (width, height))
         except Exception as e:
             print(f"Could not load platform image: {e}")
@@ -74,8 +98,8 @@ class Level:
     def create_platforms(self, platform_layout):
         """Create platforms based on the layout"""
         for plat in platform_layout:
-            x, y, width, height = plat
-            self.platforms.append(Platform(x, y, width, height))
+            x, y, platform_type = plat
+            self.platforms.append(Platform(x, y, platform_type))
     
     def draw(self, screen):
         """Draw the level background and platforms"""
@@ -104,62 +128,65 @@ class LevelManager:
     
     def initialize_levels(self):
         """Initialize all level data"""
+        screen_width = 1280  # Largura padrão da tela
+        center_x = screen_width // 2  # Centro da tela
+        
         # Level 1 - Basic Arena
         level1_platforms = [
-            (300, 400, 200, 20),  # Central platform
-            (100, 300, 150, 20),  # Left platform
-            (550, 300, 150, 20),  # Right platform
-            (0, 500, 800, 100)    # Ground
+            (center_x - 100, 400, Platform.MEDIUM),  # Central platform
+            (center_x - 300, 300, Platform.SMALL),  # Left platform
+            (center_x + 150, 300, Platform.SMALL),  # Right platform
+            (center_x - 400, 600, Platform.GROUND)    # Ground
         ]
-        spawn_points1 = [(100, 300), (700, 300)]
-        self.levels.append(Level("imagens_background/background1.png", level1_platforms, spawn_points1))
+        spawn_points1 = [(center_x - 250, 200), (center_x + 250, 200)]
+        self.levels.append(Level("./imagens_background/background1.png", level1_platforms, spawn_points1))
         
         # Level 2 - Floating Islands
         level2_platforms = [
-            (350, 250, 100, 20),  # Central floating platform
-            (150, 350, 100, 20),  # Left platform
-            (550, 350, 100, 20),  # Right platform
-            (250, 450, 300, 20),  # Lower central platform
-            (0, 500, 800, 100)    # Ground
+            (center_x - 50, 250, Platform.SMALL),  # Central floating platform
+            (center_x - 250, 350, Platform.SMALL),  # Left platform
+            (center_x + 150, 350, Platform.SMALL),  # Right platform
+            (center_x - 150, 450, Platform.MEDIUM),  # Lower central platform
+            (center_x - 400, 600, Platform.GROUND)    # Ground
         ]
-        spawn_points2 = [(150, 300), (650, 300)]
-        self.levels.append(Level("imagens_background/background2.png", level2_platforms, spawn_points2))
+        spawn_points2 = [(center_x - 250, 250), (center_x + 250, 250)]
+        self.levels.append(Level("./imagens_background/background2.png", level2_platforms, spawn_points2))
         
         # Level 3 - Vertical Challenge
         level3_platforms = [
-            (350, 150, 100, 20),  # Top platform
-            (100, 250, 100, 20),  # Left high platform
-            (600, 250, 100, 20),  # Right high platform
-            (350, 350, 100, 20),  # Middle platform
-            (200, 450, 400, 20),  # Lower platform
-            (0, 500, 800, 100)    # Ground
+            (center_x - 50, 150, Platform.SMALL),  # Top platform
+            (center_x - 300, 250, Platform.SMALL),  # Left high platform
+            (center_x + 200, 250, Platform.SMALL),  # Right high platform
+            (center_x - 50, 350, Platform.SMALL),  # Middle platform
+            (center_x - 200, 450, Platform.MEDIUM),  # Lower platform
+            (center_x - 400, 600, Platform.GROUND)    # Ground
         ]
-        spawn_points3 = [(200, 400), (600, 400)]
-        self.levels.append(Level("imagens_background/background3.png", level3_platforms, spawn_points3))
+        spawn_points3 = [(center_x - 200, 350), (center_x + 200, 350)]
+        self.levels.append(Level("./imagens_background/background3.png", level3_platforms, spawn_points3))
         
         # Level 4 - Asymmetric Arena
         level4_platforms = [
-            (200, 200, 150, 20),  # Upper left
-            (500, 300, 150, 20),  # Upper right
-            (100, 400, 150, 20),  # Lower left
-            (400, 450, 150, 20),  # Lower right
-            (0, 500, 800, 100)    # Ground
+            (center_x - 200, 200, Platform.SMALL),  # Upper left
+            (center_x + 100, 300, Platform.SMALL),  # Upper right
+            (center_x - 300, 400, Platform.SMALL),  # Lower left
+            (center_x, 450, Platform.SMALL),  # Lower right
+            (center_x - 400, 600, Platform.GROUND)    # Ground
         ]
-        spawn_points4 = [(100, 350), (700, 350)]
-        self.levels.append(Level("imagens_background/background4.jpg", level4_platforms, spawn_points4))
+        spawn_points4 = [(center_x - 250, 300), (center_x + 250, 300)]
+        self.levels.append(Level("./imagens_background/background4.png", level4_platforms, spawn_points4))
         
         # Level 5 - Final Arena
         level5_platforms = [
-            (350, 200, 100, 20),  # Top center
-            (150, 300, 100, 20),  # Mid left
-            (550, 300, 100, 20),  # Mid right
-            (250, 400, 300, 20),  # Lower center
-            (50, 450, 100, 20),   # Bottom left
-            (650, 450, 100, 20),  # Bottom right
-            (0, 500, 800, 100)    # Ground
+            (center_x - 50, 200, Platform.SMALL),  # Top center
+            (center_x - 250, 300, Platform.SMALL),  # Mid left
+            (center_x + 150, 300, Platform.SMALL),  # Mid right
+            (center_x - 150, 400, Platform.MEDIUM),  # Lower center
+            (center_x - 350, 450, Platform.SMALL),   # Bottom left
+            (center_x + 250, 450, Platform.SMALL),  # Bottom right
+            (center_x - 400, 600, Platform.GROUND)    # Ground
         ]
-        spawn_points5 = [(100, 450), (700, 450)]
-        self.levels.append(Level("imagens_background/background5.jpg", level5_platforms, spawn_points5))
+        spawn_points5 = [(center_x - 250, 350), (center_x + 250, 350)]
+        self.levels.append(Level("./imagens_background/background5.png", level5_platforms, spawn_points5))
     
     def get_current_level(self):
         """Get the current level object"""

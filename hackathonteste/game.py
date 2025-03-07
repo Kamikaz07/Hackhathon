@@ -271,7 +271,8 @@ class Game:
         
         # Draw platforms
         for platform in self.platforms:
-            pygame.draw.rect(self.screen, (100, 100, 100), platform.rect)
+            # Desenha a imagem da plataforma em vez de um retângulo simples
+            self.screen.blit(platform.image, platform.rect)
         
         # Draw start countdown
         if not self.game_started:
