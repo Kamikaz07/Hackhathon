@@ -327,13 +327,8 @@ class Character:
         # Draw name only, removed percentage display
         name_font = pygame.font.Font(None, 24)
         name_surface = name_font.render(self.name, True, (255, 255, 255))
-<<<<<<< HEAD
         screen.blit(name_surface, (self.rect.x, self.rect.y - 30))
         
-=======
-        screen.blit(name_surface, (self.x, self.y - 30))
-        pygame.draw.rect(screen, (255, 255, 0), self.rect, 2)
->>>>>>> 2442878174a4e5a600a92355e0b2789b174e8181
         # Draw effects
         self.draw_effects(screen)
         self.update_effects()
