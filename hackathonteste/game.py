@@ -83,7 +83,7 @@ class Game:
         """Create a player based on the selected class"""
         # Posições iniciais ajustadas para começar em cima da plataforma principal
         x = 250 if not is_player2 else 550
-        y = 300  # Um pouco acima da plataforma principal
+        y = 350  # Um pouco acima da plataforma principal
         
         if class_id == 0:  # Fighter
             return Fighter(x, y, name, is_player2)
@@ -157,7 +157,7 @@ class Game:
                         # Respawn player acima da plataforma principal
                         player.health = 0  # Reset damage percentage
                         player.rect.x = 250 if player == self.player1 else 550
-                        player.rect.y = 400
+                        player.rect.y = 250
                         player.x = player.rect.x
                         player.y = player.rect.y
                         player.velocity_x = 0
@@ -199,7 +199,7 @@ class Game:
                 else:
                     self.player1.health = 0
                     self.player1.rect.x = 250
-                    self.player1.rect.y = 300
+                    self.player1.rect.y = 250
             else:
                 self.player2.lives -= 1
                 if self.player2.lives <= 0:
@@ -208,7 +208,7 @@ class Game:
                 else:
                     self.player2.health = 0
                     self.player2.rect.x = 550
-                    self.player2.rect.y = 300
+                    self.player2.rect.y = 250
     
     def draw(self):
         """Draw everything to the screen"""
