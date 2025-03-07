@@ -4,11 +4,15 @@ import random
 import math
 from characters import Character, Fighter, Mage, Archer
 from buff import Buff
+from buff_manager import BuffManager
 
 class Game:
     def __init__(self, screen, player1_class, player2_class, player1_name, player2_name, level_manager):
         self.screen = screen
         self.level_manager = level_manager
+        # Get screen dimensions from the screen surface
+        self.screen_width = screen.get_width()
+        self.screen_height = screen.get_height()
         self.clock = pygame.time.Clock()
         self.running = True
         self.font = pygame.font.Font(None, 36)
@@ -43,6 +47,9 @@ class Game:
         
         # Initialize first round with full lives
         self.initialize_round()
+
+        # Initialize buff manager with screen dimensions
+        self.buff_manager = BuffManager(self.screen_width, self.screen_height)
     
     def initialize_round(self):
         """Initialize or reset the round state"""
@@ -230,6 +237,8 @@ class Game:
         if self.game_started and (self.player1.health >= self.player1.max_health or self.player2.health >= self.player2.max_health):
             self.round_over = True
             self.determine_round_winner()
+
+        self.buff_manager.update([self.player1, self.player2])
     
     def determine_round_winner(self):
         """Determina o vencedor do nível atual e avança para o próximo"""
@@ -323,6 +332,8 @@ class Game:
         # Draw controls guide if enabled
         if self.show_controls:
             self.draw_controls_guide()
+
+        self.buff_manager.draw(self.screen)
         
         pygame.display.flip()
     
@@ -632,4 +643,4 @@ class Game:
             self.handle_events()
             self.update()
             self.draw()
-            self.clock.tick(self.fps) 
+            self.clock.tick(self.fps)

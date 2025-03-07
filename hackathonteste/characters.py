@@ -44,6 +44,7 @@ class Character:
         self.rect = pygame.Rect(x, y, self.width, self.height)
         self.speed = 5
         self.health = 0  # Damage percentage starts at 0
+        self.max_health = 100  # Adjust based on your game
         self.max_health = 300  # Maximum percentage reduced
         self.base_knockback = 2  # Reduced base knockback
         self.knockback_growth = 0.2  # Reduced knockback growth
@@ -112,6 +113,13 @@ class Character:
             "combo": (255, 255, 255, 255),  # White
             "dash": (100, 255, 100, 50)  # Green
         }
+        self.attack_multiplier = 1.0
+        self.has_power_buff = False
+        self.power_buff_timer = 0
+        self.max_health = 100  # Adjust based on your game
+        self.max_mana = 100    # Adjust based on your game
+        self.active_buffs = []  # List to store active buff types
+        self.buff_durations = {}  # Dictionary to store remaining duration for each buff
     
     def get_color(self):
         """Get base color for the character"""
@@ -330,6 +338,7 @@ class Character:
         # Draw effects
         self.draw_effects(screen)
         self.update_effects()
+        self.draw_buffs(screen, self.x, self.y)
     
     def take_damage(self, damage):
         """Take damage, increasing percentage"""
@@ -453,6 +462,31 @@ class Character:
                 ghost_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
                 ghost_surface.fill((*color[:3], alpha))
                 screen.blit(ghost_surface, (self.x - (self.direction * i * 20), self.y))
+
+    def update(self):
+        # Update power buff
+        if self.has_power_buff:
+            self.power_buff_timer -= 1
+            if self.power_buff_timer <= 0:
+                self.has_power_buff = False
+                self.attack_multiplier = 1.0
+        
+        # Update buff durations
+        for buff_type in list(self.buff_durations.keys()):
+            self.buff_durations[buff_type] -= 1/60  # Decrease by 1 second (assuming 60 FPS)
+            if self.buff_durations[buff_type] <= 0:
+                self.active_buffs.remove(buff_type)
+                del self.buff_durations[buff_type]
+                if buff_type == "power":
+                    self.attack_multiplier = 1.0
+
+    def draw_buffs(self, screen, x, y):
+        """Draw active buffs below stamina"""
+        font = pygame.font.Font(None, 24)
+        for i, buff in enumerate(self.active_buffs):
+            text = f"{buff.capitalize()}: {self.buff_durations[buff]}s"
+            buff_text = font.render(text, True, (255, 255, 255))
+            screen.blit(buff_text, (x, y + 20 + (i * 20)))
 
 
 class Fighter(Character):
@@ -1140,4 +1174,4 @@ class Archer(Character):
             "hurt": Animation(os.path.join(base_path, "Hurt")),
             "run": Animation(os.path.join(base_path, "Run")),
             "push": Animation(os.path.join(base_path, "Push"))  # Added Push animation
-        } 
+        }
