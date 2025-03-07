@@ -2,6 +2,7 @@ import pygame
 import sys
 import random
 import math
+import json
 from characters import Character, Fighter, Mage, Archer
 from buff import Buff
 
@@ -55,23 +56,18 @@ class Game:
         
         # Reset round-specific variables
         self.game_started = False
-        self.start_delay = 180  # 3 seconds delay before round starts
+        self.start_delay = 180  # 3 seconds delay before game starts
+        
+        # Game settings
+        self.fps = 60
+        self.round_time = 360 * 60  # 1 minute per round
         self.current_time = self.round_time
-        self.round_over = False
-        
-        # Get platforms from current level
-        self.platforms = self.level_manager.get_platforms()
-    
-    def create_player(self, class_id, name, spawn_point, lives, is_player2=False):
-        """Create a player based on the selected class at the spawn point"""
-        x, y = spawn_point
-        
-        if class_id == 0:  # Fighter
-            player = Fighter(x, y, name, is_player2)
-        elif class_id == 1:  # Mage
-            player = Mage(x, y, name, is_player2)
-        else:  # Archer
-            player = Archer(x, y, name, is_player2)
+        self.game_over = False
+        self.winner = None
+        self.winner_class = None
+        self.loser = None
+        self.respawn_delay = 120  # 2 seconds for respawn
+        self.respawn_timer = 0
         
         player.lives = lives
         return player
@@ -102,6 +98,25 @@ class Game:
             self.mp_bar = None
             self.heart_image = None
             self.portraits = {}
+        
+        # Load sound effects
+        self.sounds = {
+            "victory": self.load_sound("victory.wav"),
+            "defeat": self.load_sound("defeat.wav")
+        }
+    
+    def create_player(self, class_id, name, is_player2=False):
+        """Create a player based on the selected class"""
+        # Posições iniciais ajustadas para começar em cima da plataforma principal
+        x = 250 if not is_player2 else 550
+        y = 350  # Um pouco acima da plataforma principal
+        
+        if class_id == 0:  # Fighter
+            return Fighter(x, y, name, is_player2)
+        elif class_id == 1:  # Mage
+            return Mage(x, y, name, is_player2)
+        else:  # Archer
+            return Archer(x, y, name, is_player2)
     
     def handle_events(self):
         """Handle pygame events"""
@@ -139,8 +154,61 @@ class Game:
         if self.game_started and self.current_time > 0:
             self.current_time -= 1
         elif self.game_started and self.current_time <= 0:
-            self.round_over = True
-            self.determine_round_winner()
+            self.game_over = True
+            # Determine winner based on lives and percentage
+            if self.player1.lives > self.player2.lives:
+                self.winner = self.player1.name
+                self.winner_class = self.player1_class
+                self.loser = self.player2.name
+            elif self.player2.lives > self.player1.lives:
+                self.winner = self.player2.name
+                self.winner_class = self.player2_class
+                self.loser = self.player1.name
+            elif self.player1.health < self.player2.health:
+                self.winner = self.player1.name
+                self.winner_class = self.player1_class
+                self.loser = self.player2.name
+            elif self.player2.health < self.player1.health:
+                self.winner = self.player2.name
+                self.winner_class = self.player2_class
+                self.loser = self.player1.name
+            else:
+                self.winner = "Empate"
+                self.winner_class = None
+                self.loser = None
+            
+            # Play victory/defeat sound
+            if self.winner != "Empate":
+                if self.sounds["victory"]:
+                    self.sounds["victory"].play()
+            
+            # Save to rankings if not a tie
+            if self.winner != "Empate":
+                try:
+                    with open("rankings.json", "r") as f:
+                        rankings = json.load(f)
+                except:
+                    rankings = []
+                
+                # Add new ranking entry
+                rankings.append({
+                    "winner": self.winner,
+                    "winner_class": self.winner_class,
+                    "loser": self.loser,
+                    "time": self.round_time - self.current_time,
+                    "date": pygame.time.get_ticks()
+                })
+                
+                # Sort by time and keep top 10
+                rankings.sort(key=lambda x: x["time"])
+                rankings = rankings[:10]
+                
+                # Save updated rankings
+                try:
+                    with open("rankings.json", "w") as f:
+                        json.dump(rankings, f)
+                except:
+                    print("Could not save rankings")
         
         # Get input for both players
         keys = pygame.key.get_pressed()
@@ -149,11 +217,22 @@ class Game:
         if self.game_started:
             # Check for out of bounds
             for player in [self.player1, self.player2]:
-                if player.y > 800:  # If player falls off screen
-                    self.round_over = True
-                    self.determine_round_winner()
+                if not self.arena_bounds.contains(player.rect):
+                    player.lives -= 1
+                    if player.lives <= 0:
+                        self.game_over = True
+                        self.winner = self.player2.name if player == self.player1 else self.player1.name
+                    else:
+                        # Respawn player acima da plataforma principal
+                        player.health = 0  # Reset damage percentage
+                        player.rect.x = 250 if player == self.player1 else 550
+                        player.rect.y = 250
+                        player.x = player.rect.x
+                        player.y = player.rect.y
+                        player.velocity_x = 0
+                        player.velocity_y = 0
             
-            # Player controls
+            # Player 1 controls
             player1_controls = {
                 "left": keys[pygame.K_a],
                 "right": keys[pygame.K_d],
@@ -180,42 +259,24 @@ class Game:
         
         # Check if either player is defeated (percentage too high)
         if self.game_started and (self.player1.health >= self.player1.max_health or self.player2.health >= self.player2.max_health):
-            self.round_over = True
-            self.determine_round_winner()
-    
-    def determine_round_winner(self):
-        """Determine the winner of the current round"""
-        # Determine winner based on health percentage
-        if self.player1.health < self.player2.health:
-            winner = 1
-            self.player1_lives -= 1
-        elif self.player2.health < self.player1.health:
-            winner = 2
-            self.player2_lives -= 1
-        else:
-            winner = random.choice([1, 2])
-            if winner == 1:
-                self.player1_lives -= 1
+            if self.player1.health >= self.player1.max_health:
+                self.player1.lives -= 1
+                if self.player1.lives <= 0:
+                    self.game_over = True
+                    self.winner = self.player2.name
+                else:
+                    self.player1.health = 0
+                    self.player1.rect.x = 250
+                    self.player1.rect.y = 250
             else:
-                self.player2_lives -= 1
-        
-        # Check if either player is out of lives in this round
-        if self.player1_lives <= 0 or self.player2_lives <= 0:
-            # Update level manager with round result
-            game_ended = self.level_manager.next_round(winner)
-            
-            if game_ended:
-                self.game_over = True
-                final_winner = self.level_manager.get_winner()
-                self.winner = self.player1_name if final_winner == 1 else self.player2_name
-            else:
-                # Reset lives for new round/map
-                self.player1_lives = 3
-                self.player2_lives = 3
-                self.initialize_round()
-        else:
-            # Continue same round with remaining lives
-            self.initialize_round()
+                self.player2.lives -= 1
+                if self.player2.lives <= 0:
+                    self.game_over = True
+                    self.winner = self.player1.name
+                else:
+                    self.player2.health = 0
+                    self.player2.rect.x = 550
+                    self.player2.rect.y = 250
     
     def draw(self):
         """Draw everything to the screen"""
@@ -385,8 +446,8 @@ class Game:
         overlay.fill((0, 0, 0))
         self.screen.blit(overlay, (0, 0))
         
-        if self.winner == "Empate! Um pombo roubou a Queijada!":
-            text = self.winner
+        if self.winner == "Empate":
+            text = "Empate! Um pombo roubou a Queijada!"
             color = (255, 255, 0)
         else:
             text = f"{self.winner} conquistou a Queijada!"
@@ -535,6 +596,16 @@ class Game:
         # Adiciona borda
         pygame.draw.rect(surface, (101, 67, 33), pygame.Rect(0, 0, width, height), 3)
         return surface
+    
+    def load_sound(self, filename):
+        """Load a sound effect"""
+        try:
+            sound = pygame.mixer.Sound(f"./imagens_background/sounds/{filename}")
+            sound.set_volume(0.3)
+            return sound
+        except:
+            print(f"Could not load sound: {filename}")
+            return None
     
     def run(self):
         """Run the game loop"""

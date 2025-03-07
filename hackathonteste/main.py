@@ -3,10 +3,14 @@ import sys
 import random
 import math
 from game import Game
-from level_manager import LevelManager
+import json
+import os
+from PIL import Image
+import io
 
-# Initialize Pygame
+# Initialize Pygame and Pygame Mixer
 pygame.init()
+pygame.mixer.init()
 
 # Set up the display
 SCREEN_WIDTH = 1280
@@ -20,29 +24,93 @@ BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
 GREEN = (0, 255, 0)
+GOLD = (255, 215, 0)
 
-# Load background
-try:
-    background = pygame.image.load("./imagens_background/background.png").convert()
-    background = pygame.transform.scale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
-except:
-    # Fallback to a colored background if image fails to load
-    background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-    background.fill((50, 50, 50))
+class GifBackground:
+    def __init__(self, gif_path, size):
+        self.frames = []
+        self.current_frame = 0
+        self.frame_timer = 0
+        self.size = size
+        
+        try:
+            # Open and load the GIF
+            gif = Image.open(gif_path)
+            
+            # Get frame duration (in milliseconds)
+            self.frame_duration = gif.info.get('duration', 100)  # Default to 100ms if not specified
+            
+            # Convert frame duration to seconds for pygame
+            self.frame_duration = self.frame_duration / 1000.0
+            
+            # Load all frames
+            for frame_index in range(gif.n_frames):
+                gif.seek(frame_index)
+                # Convert to RGBA if necessary
+                if gif.mode != 'RGBA':
+                    frame = gif.convert('RGBA')
+                else:
+                    frame = gif
+                
+                # Convert PIL image to pygame surface
+                frame_str = frame.tobytes()
+                frame_size = frame.size
+                py_frame = pygame.image.fromstring(frame_str, frame_size, 'RGBA')
+                
+                # Scale the frame
+                py_frame = pygame.transform.scale(py_frame, size)
+                self.frames.append(py_frame)
+            
+        except Exception as e:
+            print(f"Error loading GIF background: {str(e)}")
+            # Create a fallback surface
+            fallback = pygame.Surface(size)
+            fallback.fill((30, 30, 50))
+            self.frames = [fallback]
+            self.frame_duration = 0.1
+    
+    def update(self, dt):
+        """Update the current frame based on elapsed time"""
+        self.frame_timer += dt
+        if self.frame_timer >= self.frame_duration:
+            self.frame_timer = 0
+            self.current_frame = (self.current_frame + 1) % len(self.frames)
+    
+    def get_current_frame(self):
+        """Return the current frame surface"""
+        return self.frames[self.current_frame]
 
 class Menu:
     def __init__(self, screen):
         self.screen = screen
-        self.font = pygame.font.Font(None, 48)  # Larger main font
-        self.title_font = pygame.font.Font(None, 72)  # New font for title
+        self.font = pygame.font.Font(None, 48)
+        self.title_font = pygame.font.Font(None, 72)
         self.small_font = pygame.font.Font(None, 24)
         self.clock = pygame.time.Clock()
         self.running = True
         
         # Menu states
-        self.current_state = "intro"  # States: intro, character_select, controls
-        self.intro_alpha = 0  # For fade effect
+        self.current_state = "main_menu"  # States: main_menu, intro, character_select, options, rankings
+        self.intro_alpha = 0
         self.fade_in = True
+        self.transition_alpha = 0
+        self.transitioning_to = None
+        
+        # Load and play background music
+        try:
+            pygame.mixer.music.load("./imagens_background/menu_music.mp3")
+            pygame.mixer.music.set_volume(0.5)
+            pygame.mixer.music.play(-1)  # Loop indefinitely
+        except:
+            print("Could not load menu music")
+        
+        # Load sound effects
+        self.sounds = {
+            "select": self.load_sound("select.wav"),
+            "confirm": self.load_sound("confirm.wav"),
+            "back": self.load_sound("back.wav"),
+            "hover": self.load_sound("hover.wav")
+        }
         
         # Story text
         self.story_text = [
@@ -61,10 +129,24 @@ class Menu:
         # Player selection
         self.player1_name = "Jogador 1"
         self.player2_name = "Jogador 2"
-        self.player1_class = 0  # 0: Fighter, 1: Mage, 2: Archer
+        self.player1_class = 0
         self.player2_class = 0
         
-        # Class descriptions with more lore
+        # Options
+        self.load_options()
+        
+        # Rankings
+        self.load_rankings()
+        
+        # Menu buttons
+        self.main_menu_buttons = [
+            ("Jogar", lambda: self.transition_to("intro")),
+            ("Opções", lambda: self.transition_to("options")),
+            ("Rankings", lambda: self.transition_to("rankings")),
+            ("Sair", lambda: self.quit_game())
+        ]
+        
+        # Class descriptions
         self.class_descriptions = {
             0: "Cavaleiro de Óbidos: Treinado nas muralhas do castelo, domina a arte do combate próximo",
             1: "Mago de Tomar: Guardião dos segredos dos Templários, mestre das artes arcanas",
@@ -73,18 +155,118 @@ class Menu:
         
         # Load character preview images
         self.class_icons = {
-            0: self.load_character_preview("Knight"),    # Fighter/Knight
-            1: self.load_character_preview("Mage"),      # Mage
-            2: self.load_character_preview("Rogue")      # Archer/Rogue
+            0: self.load_character_preview("Knight"),
+            1: self.load_character_preview("Mage"),
+            2: self.load_character_preview("Rogue")
+        }
+        
+        # Load animated background
+        try:
+            self.menu_background = GifBackground("./imagens_background/menu.png", (SCREEN_WIDTH, SCREEN_HEIGHT))
+        except:
+            print("Could not load animated background, trying static background...")
+            try:
+                static_bg = pygame.image.load("./imagens_background/menu_background.png").convert()
+                self.menu_background = GifBackground("", (SCREEN_WIDTH, SCREEN_HEIGHT))
+                self.menu_background.frames = [pygame.transform.scale(static_bg, (SCREEN_WIDTH, SCREEN_HEIGHT))]
+            except:
+                print("Using fallback background color")
+                fallback = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+                fallback.fill((30, 30, 50))
+                self.menu_background = GifBackground("", (SCREEN_WIDTH, SCREEN_HEIGHT))
+                self.menu_background.frames = [fallback]
+
+    def load_sound(self, filename):
+        """Load a sound effect"""
+        try:
+            sound = pygame.mixer.Sound(f"./imagens_background/sounds/{filename}")
+            sound.set_volume(0.3)
+            return sound
+        except:
+            print(f"Could not load sound: {filename}")
+            return None
+
+    def load_options(self):
+        """Load game options from file"""
+        self.options = {
+            "music_volume": 0.5,
+            "sound_volume": 0.3,
+            "fullscreen": False,
+            "show_fps": False
         }
         
         try:
-            self.menu_background = pygame.image.load("./imagens_background/menu_background.png").convert()
-            self.menu_background = pygame.transform.scale(self.menu_background, (SCREEN_WIDTH, SCREEN_HEIGHT))
+            with open("options.json", "r") as f:
+                self.options.update(json.load(f))
         except:
-            self.menu_background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-            self.menu_background.fill((30, 30, 50))  # Darker blue-ish background
-    
+            self.save_options()
+
+    def save_options(self):
+        """Save game options to file"""
+        try:
+            with open("options.json", "w") as f:
+                json.dump(self.options, f)
+        except:
+            print("Could not save options")
+
+    def load_rankings(self):
+        """Load rankings from file"""
+        self.rankings = []
+        try:
+            with open("rankings.json", "r") as f:
+                self.rankings = json.load(f)
+        except:
+            self.save_rankings()
+
+    def save_rankings(self):
+        """Save rankings to file"""
+        try:
+            with open("rankings.json", "w") as f:
+                json.dump(self.rankings, f)
+        except:
+            print("Could not save rankings")
+
+    def add_ranking(self, winner, loser, winner_class, time):
+        """Add a new ranking entry"""
+        self.rankings.append({
+            "winner": winner,
+            "winner_class": winner_class,
+            "loser": loser,
+            "time": time,
+            "date": pygame.time.get_ticks()
+        })
+        self.rankings.sort(key=lambda x: x["time"])
+        self.rankings = self.rankings[:10]  # Keep only top 10
+        self.save_rankings()
+
+    def transition_to(self, new_state):
+        """Start transition to a new menu state"""
+        if self.sounds["confirm"]:
+            self.sounds["confirm"].play()
+        self.transitioning_to = new_state
+        self.fade_in = False
+
+    def update_transition(self):
+        """Update menu transition effects"""
+        if self.transitioning_to:
+            if self.fade_in:
+                self.transition_alpha = max(0, self.transition_alpha - 10)
+                if self.transition_alpha == 0:
+                    self.transitioning_to = None
+            else:
+                self.transition_alpha = min(255, self.transition_alpha + 10)
+                if self.transition_alpha == 255:
+                    self.current_state = self.transitioning_to
+                    self.fade_in = True
+
+    def draw_transition(self):
+        """Draw transition overlay"""
+        if self.transition_alpha > 0:
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            overlay.fill(BLACK)
+            overlay.set_alpha(self.transition_alpha)
+            self.screen.blit(overlay, (0, 0))
+
     def load_character_preview(self, character_type):
         """Load and scale character preview image from idle animation"""
         try:
@@ -145,8 +327,9 @@ class Menu:
     
     def draw_intro(self):
         """Draw the story intro screen"""
-        # Draw background
-        self.screen.blit(self.menu_background, (0, 0))
+        # Update and draw animated background
+        self.menu_background.update(self.clock.get_time() / 1000.0)
+        self.screen.blit(self.menu_background.get_current_frame(), (0, 0))
         
         # Create semi-transparent overlay
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -181,8 +364,9 @@ class Menu:
     
     def draw_character_select(self):
         """Draw the character selection screen"""
-        # Draw background
-        self.screen.blit(self.menu_background, (0, 0))
+        # Update and draw animated background
+        self.menu_background.update(self.clock.get_time() / 1000.0)
+        self.screen.blit(self.menu_background.get_current_frame(), (0, 0))
         
         # Draw semi-transparent overlay
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -313,6 +497,244 @@ class Menu:
         
         return buttons
     
+    def draw_main_menu(self):
+        """Draw the main menu screen"""
+        # Update and draw animated background
+        self.menu_background.update(self.clock.get_time() / 1000.0)
+        self.screen.blit(self.menu_background.get_current_frame(), (0, 0))
+        
+        # Create semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        overlay.fill((0, 0, 0))
+        overlay.set_alpha(180)
+        self.screen.blit(overlay, (0, 0))
+        
+        # Draw title with shadow
+        title = self.title_font.render("Batalha pela Queijada", True, GOLD)
+        title_shadow = self.title_font.render("Batalha pela Queijada", True, (100, 84, 0))
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 120))
+        self.screen.blit(title_shadow, (title_rect.x + 3, title_rect.y + 3))
+        self.screen.blit(title, title_rect)
+        
+        # Draw menu buttons
+        button_y = 300
+        mouse_pos = pygame.mouse.get_pos()
+        
+        for text, action in self.main_menu_buttons:
+            button_rect = pygame.Rect(SCREEN_WIDTH // 2 - 150, button_y, 300, 60)
+            hover = button_rect.collidepoint(mouse_pos)
+            
+            if hover and not hasattr(self, 'last_hover'):
+                if self.sounds["hover"]:
+                    self.sounds["hover"].play()
+                self.last_hover = text
+            elif not hover and hasattr(self, 'last_hover') and self.last_hover == text:
+                delattr(self, 'last_hover')
+            
+            # Draw button with shadow
+            pygame.draw.rect(self.screen, (0, 0, 0), button_rect.inflate(6, 6))
+            pygame.draw.rect(self.screen, GOLD if hover else (200, 200, 200), button_rect)
+            
+            # Draw text with shadow
+            text_surf = self.font.render(text, True, BLACK)
+            text_rect = text_surf.get_rect(center=button_rect.center)
+            self.screen.blit(text_surf, text_rect)
+            
+            button_y += 80
+
+    def draw_options(self):
+        """Draw the options screen"""
+        # Update and draw animated background
+        self.menu_background.update(self.clock.get_time() / 1000.0)
+        self.screen.blit(self.menu_background.get_current_frame(), (0, 0))
+        
+        # Create semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        overlay.fill((0, 0, 0))
+        overlay.set_alpha(180)
+        self.screen.blit(overlay, (0, 0))
+        
+        # Draw title
+        title = self.title_font.render("Opções", True, GOLD)
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 120))
+        self.screen.blit(title, title_rect)
+        
+        # Draw options
+        option_y = 250
+        mouse_pos = pygame.mouse.get_pos()
+        
+        # Volume controls
+        for text, value in [
+            ("Música", "music_volume"),
+            ("Sons", "sound_volume")
+        ]:
+            text_surf = self.font.render(text, True, WHITE)
+            text_rect = text_surf.get_rect(midright=(SCREEN_WIDTH // 2 - 50, option_y))
+            self.screen.blit(text_surf, text_rect)
+            
+            # Draw volume slider
+            slider_rect = pygame.Rect(SCREEN_WIDTH // 2, option_y, 200, 20)
+            pygame.draw.rect(self.screen, (100, 100, 100), slider_rect)
+            pygame.draw.rect(self.screen, GOLD, 
+                           (slider_rect.x, slider_rect.y, 
+                            slider_rect.width * self.options[value], slider_rect.height))
+            
+            if slider_rect.collidepoint(mouse_pos) and pygame.mouse.get_pressed()[0]:
+                self.options[value] = (mouse_pos[0] - slider_rect.x) / slider_rect.width
+                self.options[value] = max(0, min(1, self.options[value]))
+                
+                # Update volumes
+                if value == "music_volume":
+                    pygame.mixer.music.set_volume(self.options[value])
+                else:
+                    for sound in self.sounds.values():
+                        if sound:
+                            sound.set_volume(self.options[value])
+            
+            option_y += 60
+        
+        # Toggle options
+        for text, value in [
+            ("Tela Cheia", "fullscreen"),
+            ("Mostrar FPS", "show_fps")
+        ]:
+            text_surf = self.font.render(text, True, WHITE)
+            text_rect = text_surf.get_rect(midright=(SCREEN_WIDTH // 2 - 50, option_y))
+            self.screen.blit(text_surf, text_rect)
+            
+            # Draw toggle button
+            toggle_rect = pygame.Rect(SCREEN_WIDTH // 2, option_y, 40, 20)
+            pygame.draw.rect(self.screen, GOLD if self.options[value] else (100, 100, 100), toggle_rect)
+            pygame.draw.circle(self.screen, WHITE,
+                             (toggle_rect.right - 10 if self.options[value] else toggle_rect.left + 10,
+                              toggle_rect.centery), 8)
+            
+            if toggle_rect.collidepoint(mouse_pos) and pygame.mouse.get_pressed()[0] and not hasattr(self, 'toggle_cooldown'):
+                self.options[value] = not self.options[value]
+                if self.sounds["select"]:
+                    self.sounds["select"].play()
+                self.toggle_cooldown = pygame.time.get_ticks()
+                
+                # Apply fullscreen change
+                if value == "fullscreen":
+                    pygame.display.toggle_fullscreen()
+            
+            option_y += 60
+        
+        # Back button
+        back_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT - 100, 200, 50)
+        hover = back_rect.collidepoint(mouse_pos)
+        pygame.draw.rect(self.screen, GOLD if hover else (200, 200, 200), back_rect)
+        
+        back_text = self.font.render("Voltar", True, BLACK)
+        back_rect = back_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 75))
+        self.screen.blit(back_text, back_rect)
+        
+        # Handle toggle cooldown
+        if hasattr(self, 'toggle_cooldown') and pygame.time.get_ticks() - self.toggle_cooldown > 200:
+            delattr(self, 'toggle_cooldown')
+
+    def draw_rankings(self):
+        """Draw the rankings screen"""
+        # Update and draw animated background
+        self.menu_background.update(self.clock.get_time() / 1000.0)
+        self.screen.blit(self.menu_background.get_current_frame(), (0, 0))
+        
+        # Create semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        overlay.fill((0, 0, 0))
+        overlay.set_alpha(180)
+        self.screen.blit(overlay, (0, 0))
+        
+        # Draw title
+        title = self.title_font.render("Rankings", True, GOLD)
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 120))
+        self.screen.blit(title, title_rect)
+        
+        if not self.rankings:
+            # Draw "No rankings yet" message
+            text = self.font.render("Nenhum ranking ainda!", True, WHITE)
+            text_rect = text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+            self.screen.blit(text, text_rect)
+        else:
+            # Draw rankings table
+            y = 200
+            headers = ["Pos.", "Vencedor", "Classe", "Tempo"]
+            x_positions = [SCREEN_WIDTH // 2 - 300, SCREEN_WIDTH // 2 - 150, 
+                         SCREEN_WIDTH // 2 + 50, SCREEN_WIDTH // 2 + 200]
+            
+            # Draw headers
+            for header, x in zip(headers, x_positions):
+                text = self.font.render(header, True, GOLD)
+                text_rect = text.get_rect(midleft=(x, y))
+                self.screen.blit(text, text_rect)
+            
+            y += 40
+            
+            # Draw entries
+            for i, entry in enumerate(self.rankings):
+                color = GOLD if i == 0 else WHITE
+                
+                # Position
+                pos_text = self.font.render(f"#{i+1}", True, color)
+                self.screen.blit(pos_text, (x_positions[0], y))
+                
+                # Winner
+                winner_text = self.font.render(entry["winner"], True, color)
+                self.screen.blit(winner_text, (x_positions[1], y))
+                
+                # Class
+                class_names = ["Cavaleiro", "Mago", "Arqueiro"]
+                class_text = self.font.render(class_names[entry["winner_class"]], True, color)
+                self.screen.blit(class_text, (x_positions[2], y))
+                
+                # Time
+                minutes = entry["time"] // (60 * 60)
+                seconds = (entry["time"] // 60) % 60
+                time_text = self.font.render(f"{minutes:02d}:{seconds:02d}", True, color)
+                self.screen.blit(time_text, (x_positions[3], y))
+                
+                y += 40
+        
+        # Back button
+        mouse_pos = pygame.mouse.get_pos()
+        back_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT - 100, 200, 50)
+        hover = back_rect.collidepoint(mouse_pos)
+        pygame.draw.rect(self.screen, GOLD if hover else (200, 200, 200), back_rect)
+        
+        back_text = self.font.render("Voltar", True, BLACK)
+        back_rect = back_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 75))
+        self.screen.blit(back_text, back_rect)
+
+    def start_game(self):
+        """Start a new game with the selected characters"""
+        # Stop menu music
+        pygame.mixer.music.stop()
+        
+        # Create new game instance
+        game = Game(
+            self.screen,
+            self.player1_class,
+            self.player1_name,
+            self.player2_class,
+            self.player2_name,
+            1,  # Level 1 by default
+            self.menu_background.get_current_frame()  # Use menu background for now
+        )
+        
+        # Run the game
+        game.run()
+        
+        # Restart menu music when returning
+        try:
+            pygame.mixer.music.load("./imagens_background/menu_music.mp3")
+            pygame.mixer.music.set_volume(self.options["music_volume"])
+            pygame.mixer.music.play(-1)
+        except:
+            print("Could not reload menu music")
+        
+        return True  # Return to menu after game ends
+
     def run(self):
         """Run the menu"""
         while self.running:
@@ -320,54 +742,88 @@ class Menu:
             
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    self.quit_game()
+                
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Left click
+                        if self.current_state == "main_menu":
+                            button_y = 300
+                            for text, action in self.main_menu_buttons:
+                                button_rect = pygame.Rect(SCREEN_WIDTH // 2 - 150, button_y, 300, 60)
+                                if button_rect.collidepoint(mouse_pos):
+                                    action()
+                                button_y += 80
+                        
+                        elif self.current_state == "options":
+                            back_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT - 100, 200, 50)
+                            if back_rect.collidepoint(mouse_pos):
+                                self.transition_to("main_menu")
+                                self.save_options()
+                        
+                        elif self.current_state == "rankings":
+                            back_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT - 100, 200, 50)
+                            if back_rect.collidepoint(mouse_pos):
+                                self.transition_to("main_menu")
+                        
+                        elif self.current_state == "character_select":
+                            # Player 1 class selection
+                            for i, button in enumerate(self.player1_buttons):
+                                if button.collidepoint(mouse_pos):
+                                    if self.sounds["select"]:
+                                        self.sounds["select"].play()
+                                    self.player1_class = i
+                            
+                            # Player 2 class selection
+                            for i, button in enumerate(self.player2_buttons):
+                                if button.collidepoint(mouse_pos):
+                                    if self.sounds["select"]:
+                                        self.sounds["select"].play()
+                                    self.player2_class = i
+                            
+                            # Start game button
+                            if self.start_button.collidepoint(mouse_pos):
+                                if self.sounds["confirm"]:
+                                    self.sounds["confirm"].play()
+                                return self.start_game()
                 
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_SPACE and self.current_state == "intro":
-                        self.current_state = "character_select"
-                
-                if event.type == pygame.MOUSEBUTTONDOWN and self.current_state == "character_select":
-                    # Player 1 class selection
-                    for i, button in enumerate(self.player1_buttons):
-                        if button.collidepoint(mouse_pos):
-                            self.player1_class = i
+                    if event.key == pygame.K_ESCAPE:
+                        if self.current_state in ["options", "rankings"]:
+                            self.transition_to("main_menu")
+                            if self.current_state == "options":
+                                self.save_options()
+                        elif self.current_state == "main_menu":
+                            self.quit_game()
                     
-                    # Player 2 class selection
-                    for i, button in enumerate(self.player2_buttons):
-                        if button.collidepoint(mouse_pos):
-                            self.player2_class = i
-                    
-                    # Start game button
-                    if self.start_button.collidepoint(mouse_pos):
-                        return self.start_game()
+                    elif event.key == pygame.K_SPACE and self.current_state == "intro":
+                        self.transition_to("character_select")
             
             # Draw current menu state
-            if self.current_state == "intro":
+            if self.current_state == "main_menu":
+                self.draw_main_menu()
+            elif self.current_state == "intro":
                 self.draw_intro()
             elif self.current_state == "character_select":
                 self.draw_character_select()
+            elif self.current_state == "options":
+                self.draw_options()
+            elif self.current_state == "rankings":
+                self.draw_rankings()
+            
+            # Update and draw transition effects
+            self.update_transition()
+            self.draw_transition()
             
             pygame.display.flip()
             self.clock.tick(60)
     
-    def start_game(self):
-        """Start the game with selected characters"""
-        # Create level manager
-        level_manager = LevelManager()
-        
-        # Create game instance with level manager
-        game = Game(
-            self.screen,
-            self.player1_class,
-            self.player2_class,
-            self.player1_name,
-            self.player2_name,
-            level_manager
-        )
-        
-        # Run game loop
-        game.run()
+    def quit_game(self):
+        """Quit the game"""
+        if self.sounds["back"]:
+            self.sounds["back"].play()
+            pygame.time.wait(500)  # Wait for sound to play
+        pygame.quit()
+        sys.exit()
 
 def main():
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
