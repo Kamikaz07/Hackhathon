@@ -46,7 +46,7 @@ class Character:
         self.health = 0  # Damage percentage starts at 0
         self.max_health = 300  # Maximum percentage reduced
         self.base_knockback = 2  # Reduced base knockback
-        self.knockback_growth = 0.05  # Reduced knockback growth
+        self.knockback_growth = 0.2  # Reduced knockback growth
         self.attack_power = 10
         self.defense = 5
         self.attack_range = 60
@@ -258,7 +258,7 @@ class Character:
                     # Calculate knockback based on opponent's damage percentage
                     knockback_power = self.base_knockback * (1 + opponent.health * 0.01)
                     knockback_x = self.direction * knockback_power
-                    knockback_y = -knockback_power * 0.5
+                    knockback_y = -knockback_power * 0.7
                     opponent.velocity_x = knockback_x
                     opponent.velocity_y = knockback_y
         
@@ -463,8 +463,8 @@ class Fighter(Character):
         self.attack_range = 70
         self.special_damage = 12
         self.speed = 4  # Slower but steady
-        self.width = 64
-        self.height = 64
+        self.width = 100
+        self.height = 100
         self.base_knockback = 3  # High base knockback
         
         # Knight specific attributes
@@ -754,8 +754,8 @@ class Mage(Character):
         self.attack_range = 200  # Longest range
         self.special_damage = 8
         self.speed = 4  # Slower movement speed
-        self.width = 64
-        self.height = 64
+        self.width = 100
+        self.height = 100
         self.base_knockback = 2
         
         # Configurações de pulo idênticas à classe base (Character)
@@ -949,8 +949,8 @@ class Archer(Character):
         self.attack_range = 200
         self.special_damage = 6
         self.speed = 7  # Increased base speed
-        self.width = 64
-        self.height = 64
+        self.width = 100
+        self.height = 100
         self.base_knockback = 1.5
         
         # Rogue specific attributes

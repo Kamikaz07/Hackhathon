@@ -22,9 +22,13 @@ class Game:
         self.controls_fade_timer = 600  # 10 seconds before starting to fade
         self.controls_position = "left"  # Can be "left" or "right"
         
-        # Platform setup
+        # Carregar imagens das plataformas
+        self.platform_images = self.load_platform_images()
+        
+        # Define platforms as rectangles for collision detection
+        # Mantendo plataformas como retângulos simples para colisão
         self.platforms = [
-            pygame.Rect(150, 450, 500, 20),  # Plataforma principal (mais larga e mais baixa)
+            pygame.Rect(150, 450, 500, 20),  # Plataforma principal
             pygame.Rect(200, 300, 150, 20),  # Plataforma esquerda
             pygame.Rect(450, 300, 150, 20),  # Plataforma direita
         ]
@@ -211,9 +215,20 @@ class Game:
         # Draw background
         self.screen.blit(self.background, (0, 0))
         
-        # Draw platforms
+        # Draw platforms with images
         for platform in self.platforms:
-            pygame.draw.rect(self.screen, (100, 100, 100), platform)
+            # Choose image based on platform width
+            if platform.width >= 500:
+                image = self.platform_images["large"]
+            else:
+                image = self.platform_images["small"]
+            
+            # Draw with a small offset for better visual appearance
+            self.screen.blit(image, (platform.x, platform.y - 20))
+            
+            # Desenhar a borda da plataforma para fins de debug/visualização da área de colisão
+            # Borda amarela para destacar onde realmente está a colisão
+            pygame.draw.rect(self.screen, (255, 255, 0), platform, 2)
         
         # Draw arena boundaries
         pygame.draw.rect(self.screen, (255, 0, 0), self.arena_bounds, 2)
@@ -229,6 +244,10 @@ class Game:
         self.player1.draw(self.screen)
         self.player2.draw(self.screen)
         
+        # Desenhar a porcentagem de dano acima dos jogadores
+        self.draw_damage_percentage(self.player1)
+        self.draw_damage_percentage(self.player2)
+        
         # Draw HUD
         self.draw_hud()
         
@@ -241,6 +260,33 @@ class Game:
             self.draw_game_over()
         
         pygame.display.flip()
+    
+    def draw_damage_percentage(self, player):
+        """Desenha a porcentagem de dano e o nome acima do jogador"""
+        # Cores baseadas na porcentagem de dano (verde para baixo, vermelho para alto)
+        damage_pct = player.health / player.max_health if player.max_health > 0 else 0
+        # Cor gradiente de verde para vermelho baseado no dano
+        r = min(255, int(255 * damage_pct * 2))
+        g = min(255, int(255 * (1 - damage_pct)))
+        color = (r, g, 0)
+        
+        # Renderiza o texto com a porcentagem de dano (sem fundo)
+        damage_text = self.small_font.render(f"{int(player.health)}%", True, color)
+        
+        # Renderiza o nome do jogador
+        name_text = self.small_font.render(f"{player.name}", True, (255, 255, 255))
+        
+        # Posiciona o texto acima do jogador
+        damage_x = player.rect.centerx - damage_text.get_width() // 2
+        damage_y = player.rect.y - damage_text.get_height() - 10  # 10 pixels acima do jogador
+        
+        # Posiciona o nome acima da porcentagem
+        name_x = player.rect.centerx - name_text.get_width() // 2
+        name_y = damage_y - name_text.get_height() - 5  # 5 pixels acima da porcentagem
+        
+        # Desenha os textos (sem fundo)
+        self.screen.blit(name_text, (name_x, name_y))
+        self.screen.blit(damage_text, (damage_x, damage_y))
     
     def draw_hud(self):
         """Draw heads-up display"""
@@ -458,6 +504,38 @@ class Game:
         except Exception as e:
             print(f"Error loading portrait for {character_type}: {str(e)}")
             return None
+    
+    def load_platform_images(self):
+        """Carrega as imagens das plataformas"""
+        platform_images = {}
+        try:
+            # Tenta carregar as plataformas
+            large_platform = pygame.image.load("./imagens_background/platform_large.png").convert_alpha()
+            small_platform = pygame.image.load("./imagens_background/platform_small.png").convert_alpha()
+            
+            # Redimensiona as imagens para o tamanho correto
+            platform_images["large"] = pygame.transform.scale(large_platform, (500, 40))
+            platform_images["small"] = pygame.transform.scale(small_platform, (150, 40))
+            
+        except Exception as e:
+            print(f"Erro ao carregar imagens das plataformas: {str(e)}")
+            # Cria superfícies de fallback caso as imagens não sejam carregadas
+            platform_images["large"] = self.create_fallback_platform(500, 40)
+            platform_images["small"] = self.create_fallback_platform(150, 40)
+            
+        return platform_images
+    
+    def create_fallback_platform(self, width, height):
+        """Cria uma imagem de plataforma de fallback caso as imagens não carreguem"""
+        surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        # Desenha um retângulo com cor de madeira
+        pygame.draw.rect(surface, (139, 69, 19), pygame.Rect(0, 0, width, height))
+        # Adiciona alguns detalhes para parecer madeira
+        for i in range(0, width, 30):
+            pygame.draw.line(surface, (101, 67, 33), (i, 0), (i, height), 2)
+        # Adiciona borda
+        pygame.draw.rect(surface, (101, 67, 33), pygame.Rect(0, 0, width, height), 3)
+        return surface
     
     def run(self):
         """Run the game loop"""
