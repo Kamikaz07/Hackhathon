@@ -305,9 +305,6 @@ class Character:
         # Update animation state
         self.update_animation_state()
         
-        # Desenha o retângulo de colisão do personagem (área de hitbox)
-        pygame.draw.rect(screen, (0, 255, 255), self.rect, 2)  # Ciano, espessura 2
-        
         # Get current animation frame
         current_animation = self.animations.get(self.state)
         if current_animation:
@@ -319,7 +316,7 @@ class Character:
                 
                 # Scale the frame if needed
                 scaled_frame = pygame.transform.scale(frame, (self.width, self.height))
-                screen.blit(scaled_frame, (self.rect.x, self.rect.y))
+                screen.blit(scaled_frame, (self.x, self.y))
         
         # Draw attack hitbox if attacking
         if self.attacking:
@@ -328,8 +325,8 @@ class Character:
         # Draw name only, removed percentage display
         name_font = pygame.font.Font(None, 24)
         name_surface = name_font.render(self.name, True, (255, 255, 255))
-        screen.blit(name_surface, (self.rect.x, self.rect.y - 30))
-        
+        screen.blit(name_surface, (self.x, self.y - 30))
+        pygame.draw.rect(screen, (255, 255, 0), self.rect, 2)
         # Draw effects
         self.draw_effects(screen)
         self.update_effects()
@@ -395,7 +392,7 @@ class Character:
             shield_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
             color = self.effect_colors["perfect_block"]
             pygame.draw.circle(shield_surface, color, (radius, radius), radius * pulse, 3)
-            screen.blit(shield_surface, (self.rect.x + self.width//2 - radius, self.rect.y + self.height//2 - radius))
+            screen.blit(shield_surface, (self.x + self.width//2 - radius, self.y + self.height//2 - radius))
         
         if "charging" in self.active_effects:
             # Draw charging effect with particles
@@ -411,7 +408,7 @@ class Character:
                 particle_size = random.randint(2, 4)
                 pygame.draw.circle(charge_surface, (255, 255, 200, 150), (particle_x, particle_y), particle_size)
             
-            screen.blit(charge_surface, (self.rect.x, self.rect.y + self.height - charge_height))
+            screen.blit(charge_surface, (self.x, self.y + self.height - charge_height))
         
         if "teleport" in self.active_effects:
             # Draw teleport trail with fade effect
@@ -588,12 +585,26 @@ class Fighter(Character):
             self.slam_cooldown = self.slam_cooldown_max
             self.stamina -= 30
             
-            # Chama o método special_ability que vai aplicar os efeitos
-            damage = self.special_ability(opponent)
+            attack_width = 120
+            attack_height = 80
             
-            # O método special_ability já aplica o dano, mas vamos garantir que o oponente seja afetado
-            if damage > 0:
-                self.special_cooldown = self.special_cooldown_max  # Atualiza o cooldown do especial
+            if not self.on_ground:
+                # Ground slam
+                self.state = "attack_extra"
+                self.velocity_y = 20
+                hitbox = pygame.Rect(self.x - attack_width/2, self.y + self.height, attack_width, attack_height)
+            else:
+                # Uppercut
+                self.state = "attack"
+                self.velocity_y = self.jump_force * 1.2
+                hitbox = pygame.Rect(self.x - attack_width/2, self.y - attack_height, attack_width, attack_height)
+            
+            if hitbox.colliderect(opponent.rect):
+                damage = self.special_damage * (1.5 if not self.on_ground else 1.2)
+                opponent.take_damage(damage)
+                # Strong vertical knockback
+                opponent.velocity_y = -15 if self.on_ground else 15
+                opponent.velocity_x = self.direction * 10
         
         # Push attack
         if controls["defend"] and controls["attack"] and self.push_cooldown <= 0 and self.stamina >= 20:
@@ -642,39 +653,22 @@ class Fighter(Character):
             # Ground slam
             self.state = "attack_extra"
             self.velocity_y = 20
-            hitbox = pygame.Rect(self.rect.x - attack_width/2, self.rect.y + self.height, attack_width, attack_height)
+            hitbox = pygame.Rect(self.x - attack_width/2, self.y + self.height, attack_width, attack_height)
             damage = self.special_damage * 1.5
         else:
             # Uppercut
             self.state = "attack"
             self.velocity_y = self.jump_force * 1.2
-            
-            # Ajuste na hitbox do uppercut - era muito alta e não atingia o oponente
-            # Vamos colocar na frente do personagem em vez de apenas acima
-            hitbox = pygame.Rect(
-                self.rect.x + (self.width/2 * self.direction),  # Posição lateral baseada na direção
-                self.rect.y - attack_height/2,                   # Um pouco acima, mas não tanto
-                attack_width, 
-                attack_height
-            )
-            
+            hitbox = pygame.Rect(self.x - attack_width/2, self.y - attack_height, attack_width, attack_height)
             damage = self.special_damage * 1.2
         
-        # Desenhar a hitbox para debug (temporário)
-        # Adicione esta linha e depois remova após identificar se a hitbox está correta
-        pygame.draw.rect(pygame.display.get_surface(), (255, 0, 0), hitbox, 2)
-        
         if hitbox.colliderect(opponent.rect):
-            # Aplica o dano diretamente aqui
             opponent.take_damage(damage)
             # Strong vertical knockback
             opponent.velocity_y = -15 if self.on_ground else 15
             opponent.velocity_x = self.direction * 10
-            # Retorna um valor real de dano para indicar que o ataque acertou
-            return damage
         
-        # Retorna 0 para indicar que o ataque não acertou
-        return 0
+        return damage  # Return damage for knockback calculation
     
     def draw(self, screen):
         """Override draw to add stamina bar"""
@@ -684,7 +678,7 @@ class Fighter(Character):
         
         # Show perfect block indicator
         if self.perfect_block_timer > 0:
-            pygame.draw.circle(screen, (255, 215, 0), (self.rect.x + self.width//2, self.rect.y - 50), 5)
+            pygame.draw.circle(screen, (255, 215, 0), (self.x + self.width//2, self.y - 50), 5)
     
     def get_color(self):
         """Knight's unique color"""
@@ -838,8 +832,8 @@ class Mage(Character):
             
             # Create fire projectile
             projectile = FireProjectile(
-                self.rect.x + (self.width if self.direction == 1 else 0),
-                self.rect.y + self.height/2,
+                self.x + (self.width if self.direction == 1 else 0),
+                self.y + self.height/2,
                 self.direction,
                 self.projectile_damage
             )
@@ -855,8 +849,8 @@ class Mage(Character):
             
             # Create special fire projectile
             projectile = FireProjectile(
-                self.rect.x + (self.width if self.direction == 1 else 0),
-                self.rect.y + self.height/2,
+                self.x + (self.width if self.direction == 1 else 0),
+                self.y + self.height/2,
                 self.direction,
                 self.special_projectile_damage,
                 is_special=True
@@ -880,10 +874,10 @@ class Mage(Character):
             self.mana -= 30
             # Teleport in facing direction
             teleport_distance = 150
-            new_x = self.rect.x + (teleport_distance * self.direction)
+            new_x = self.x + (teleport_distance * self.direction)
             # Check if new position is valid
             if 0 <= new_x <= 800 - self.width:
-                self.rect.x = new_x
+                self.x = new_x
                 self.velocity_x = self.direction * 5  # Small momentum after teleport
         
         # Visual feedback for teleport
@@ -897,12 +891,12 @@ class Mage(Character):
         # Create large fire explosion
         attack_width = 250
         attack_height = 200
-        center_x = self.rect.x + self.width/2
-        center_y = self.rect.y + self.height/2
+        center_x = self.x + self.width/2
+        center_y = self.y + self.height/2
         
         # Calculate distance to opponent's center
-        opp_center_x = opponent.rect.x + opponent.width/2
-        opp_center_y = opponent.rect.y + opponent.height/2
+        opp_center_x = opponent.x + opponent.width/2
+        opp_center_y = opponent.y + opponent.height/2
         distance = math.sqrt((center_x - opp_center_x)**2 + (center_y - opp_center_y)**2)
         
         damage = 0
