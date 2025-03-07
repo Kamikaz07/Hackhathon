@@ -50,6 +50,7 @@ class Character:
         self.attack_power = 10
         self.defense = 5
         self.attack_range = 60
+        self.lives = 3
         
         # Physics
         self.velocity_x = 0

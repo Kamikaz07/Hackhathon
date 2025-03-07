@@ -6,15 +6,23 @@ from characters import Character, Fighter, Mage, Archer
 from buff import Buff
 
 class Game:
-    def __init__(self, screen, player1_class, player1_name, player2_class, player2_name, level, background):
+    def __init__(self, screen, player1_class, player2_class, player1_name, player2_name, level_manager):
         self.screen = screen
-        self.level = level
-        self.background = background
+        self.level_manager = level_manager
         self.clock = pygame.time.Clock()
         self.running = True
         self.font = pygame.font.Font(None, 36)
         self.small_font = pygame.font.Font(None, 24)
         self.tiny_font = pygame.font.Font(None, 20)  # New font for controls display
+        
+        # Game settings
+        self.fps = 60
+        self.round_time = 360 * 60  # 1 minute per round
+        self.current_time = self.round_time
+        self.game_over = False
+        self.winner = None
+        self.respawn_delay = 120  # 2 seconds for respawn
+        self.respawn_timer = 0
         
         # Controls guide
         self.show_controls = True
@@ -22,38 +30,54 @@ class Game:
         self.controls_fade_timer = 600  # 10 seconds before starting to fade
         self.controls_position = "left"  # Can be "left" or "right"
         
-        # Carregar imagens das plataformas
-        self.platform_images = self.load_platform_images()
-        
-        # Define platforms as rectangles for collision detection
-        # Mantendo plataformas como retângulos simples para colisão
-        self.platforms = [
-            pygame.Rect(150, 450, 500, 20),  # Plataforma principal
-            pygame.Rect(200, 300, 150, 20),  # Plataforma esquerda
-            pygame.Rect(450, 300, 150, 20),  # Plataforma direita
-        ]
-        
-        # Arena boundaries
-        self.arena_bounds = pygame.Rect(50, 50, 700, 550)
-        
         # Game state
-        self.player1 = self.create_player(player1_class, player1_name, is_player2=False)
-        self.player2 = self.create_player(player2_class, player2_name, is_player2=True)
-        self.player1.lives = 3
-        self.player2.lives = 3
-        self.game_started = False
-        self.start_delay = 180  # 3 seconds delay before game starts
-        
-        # Game settings
-        self.fps = 60
-        self.round_time = 360 * 360  # 1 minute per round
-        self.current_time = self.round_time
-        self.game_over = False
-        self.winner = None
-        self.respawn_delay = 120  # 2 seconds for respawn
-        self.respawn_timer = 0
+        self.player1_class = player1_class
+        self.player2_class = player2_class
+        self.player1_name = player1_name
+        self.player2_name = player2_name
+        self.player1_lives = 3
+        self.player2_lives = 3
         
         # Load HUD assets
+        self.load_hud_assets()
+        
+        # Initialize first round with full lives
+        self.initialize_round()
+    
+    def initialize_round(self):
+        """Initialize or reset the round state"""
+        # Get spawn points from current level
+        spawn_points = self.level_manager.get_spawn_points()
+        
+        # Create players at spawn points with current lives
+        self.player1 = self.create_player(self.player1_class, self.player1_name, spawn_points[0], self.player1_lives, is_player2=False)
+        self.player2 = self.create_player(self.player2_class, self.player2_name, spawn_points[1], self.player2_lives, is_player2=True)
+        
+        # Reset round-specific variables
+        self.game_started = False
+        self.start_delay = 180  # 3 seconds delay before round starts
+        self.current_time = self.round_time
+        self.round_over = False
+        
+        # Get platforms from current level
+        self.platforms = self.level_manager.get_platforms()
+    
+    def create_player(self, class_id, name, spawn_point, lives, is_player2=False):
+        """Create a player based on the selected class at the spawn point"""
+        x, y = spawn_point
+        
+        if class_id == 0:  # Fighter
+            player = Fighter(x, y, name, is_player2)
+        elif class_id == 1:  # Mage
+            player = Mage(x, y, name, is_player2)
+        else:  # Archer
+            player = Archer(x, y, name, is_player2)
+        
+        player.lives = lives
+        return player
+    
+    def load_hud_assets(self):
+        """Load all HUD assets"""
         hud_base = "./imagens_characters/SirLobo_Pack_HUD_2021_ONLY_PNG/HUD/Modulated/8"
         try:
             self.hp_bar = pygame.image.load(f"{hud_base}/hp_bar.png").convert_alpha()
@@ -78,19 +102,6 @@ class Game:
             self.mp_bar = None
             self.heart_image = None
             self.portraits = {}
-    
-    def create_player(self, class_id, name, is_player2=False):
-        """Create a player based on the selected class"""
-        # Posições iniciais ajustadas para começar em cima da plataforma principal
-        x = 250 if not is_player2 else 550
-        y = 300  # Um pouco acima da plataforma principal
-        
-        if class_id == 0:  # Fighter
-            return Fighter(x, y, name, is_player2)
-        elif class_id == 1:  # Mage
-            return Mage(x, y, name, is_player2)
-        else:  # Archer
-            return Archer(x, y, name, is_player2)
     
     def handle_events(self):
         """Handle pygame events"""
@@ -128,42 +139,21 @@ class Game:
         if self.game_started and self.current_time > 0:
             self.current_time -= 1
         elif self.game_started and self.current_time <= 0:
-            self.game_over = True
-            # Determine winner based on lives and percentage
-            if self.player1.lives > self.player2.lives:
-                self.winner = self.player1.name
-            elif self.player2.lives > self.player1.lives:
-                self.winner = self.player2.name
-            elif self.player1.health < self.player2.health:
-                self.winner = self.player1.name
-            elif self.player2.health < self.player1.health:
-                self.winner = self.player2.name
-            else:
-                self.winner = "Empate! Um pombo roubou a Queijada!"
+            self.round_over = True
+            self.determine_round_winner()
         
         # Get input for both players
         keys = pygame.key.get_pressed()
         
         # Update players
         if self.game_started:
-            # Check for out of bounds and handle respawning
+            # Check for out of bounds
             for player in [self.player1, self.player2]:
-                if not self.arena_bounds.contains(player.rect):
-                    player.lives -= 1
-                    if player.lives <= 0:
-                        self.game_over = True
-                        self.winner = self.player2.name if player == self.player1 else self.player1.name
-                    else:
-                        # Respawn player acima da plataforma principal
-                        player.health = 0  # Reset damage percentage
-                        player.rect.x = 250 if player == self.player1 else 550
-                        player.rect.y = 400
-                        player.x = player.rect.x
-                        player.y = player.rect.y
-                        player.velocity_x = 0
-                        player.velocity_y = 0
+                if player.y > 800:  # If player falls off screen
+                    self.round_over = True
+                    self.determine_round_winner()
             
-            # Player 1 controls
+            # Player controls
             player1_controls = {
                 "left": keys[pygame.K_a],
                 "right": keys[pygame.K_d],
@@ -174,7 +164,6 @@ class Game:
                 "special": keys[pygame.K_h]
             }
             
-            # Player 2 controls
             player2_controls = {
                 "left": keys[pygame.K_LEFT],
                 "right": keys[pygame.K_RIGHT],
@@ -191,47 +180,52 @@ class Game:
         
         # Check if either player is defeated (percentage too high)
         if self.game_started and (self.player1.health >= self.player1.max_health or self.player2.health >= self.player2.max_health):
-            if self.player1.health >= self.player1.max_health:
-                self.player1.lives -= 1
-                if self.player1.lives <= 0:
-                    self.game_over = True
-                    self.winner = self.player2.name
-                else:
-                    self.player1.health = 0
-                    self.player1.rect.x = 250
-                    self.player1.rect.y = 300
+            self.round_over = True
+            self.determine_round_winner()
+    
+    def determine_round_winner(self):
+        """Determine the winner of the current round"""
+        # Determine winner based on health percentage
+        if self.player1.health < self.player2.health:
+            winner = 1
+            self.player1_lives -= 1
+        elif self.player2.health < self.player1.health:
+            winner = 2
+            self.player2_lives -= 1
+        else:
+            winner = random.choice([1, 2])
+            if winner == 1:
+                self.player1_lives -= 1
             else:
-                self.player2.lives -= 1
-                if self.player2.lives <= 0:
-                    self.game_over = True
-                    self.winner = self.player1.name
-                else:
-                    self.player2.health = 0
-                    self.player2.rect.x = 550
-                    self.player2.rect.y = 300
+                self.player2_lives -= 1
+        
+        # Check if either player is out of lives in this round
+        if self.player1_lives <= 0 or self.player2_lives <= 0:
+            # Update level manager with round result
+            game_ended = self.level_manager.next_round(winner)
+            
+            if game_ended:
+                self.game_over = True
+                final_winner = self.level_manager.get_winner()
+                self.winner = self.player1_name if final_winner == 1 else self.player2_name
+            else:
+                # Reset lives for new round/map
+                self.player1_lives = 3
+                self.player2_lives = 3
+                self.initialize_round()
+        else:
+            # Continue same round with remaining lives
+            self.initialize_round()
     
     def draw(self):
         """Draw everything to the screen"""
-        # Draw background
-        self.screen.blit(self.background, (0, 0))
+        # Draw current level
+        current_level = self.level_manager.get_current_level()
+        current_level.draw(self.screen)
         
-        # Draw platforms with images
+        # Draw platforms
         for platform in self.platforms:
-            # Choose image based on platform width
-            if platform.width >= 500:
-                image = self.platform_images["large"]
-            else:
-                image = self.platform_images["small"]
-            
-            # Draw with a small offset for better visual appearance
-            self.screen.blit(image, (platform.x, platform.y - 20))
-            
-            # Desenhar a borda da plataforma para fins de debug/visualização da área de colisão
-            # Borda amarela para destacar onde realmente está a colisão
-            pygame.draw.rect(self.screen, (255, 255, 0), platform, 2)
-        
-        # Draw arena boundaries
-        pygame.draw.rect(self.screen, (255, 0, 0), self.arena_bounds, 2)
+            pygame.draw.rect(self.screen, (100, 100, 100), platform.rect)
         
         # Draw start countdown
         if not self.game_started:
@@ -244,20 +238,26 @@ class Game:
         self.player1.draw(self.screen)
         self.player2.draw(self.screen)
         
-        # Desenhar a porcentagem de dano acima dos jogadores
-        self.draw_damage_percentage(self.player1)
-        self.draw_damage_percentage(self.player2)
-        
         # Draw HUD
         self.draw_hud()
         
-        # Draw controls guide
-        if self.show_controls:
-            self.draw_controls_guide()
+        # Draw round and level info
+        round_text = self.level_manager.get_round_text()
+        score_text = self.level_manager.get_score_text()
+        
+        round_surface = self.font.render(round_text, True, (255, 255, 255))
+        score_surface = self.font.render(score_text, True, (255, 255, 255))
+        
+        self.screen.blit(round_surface, (10, 10))
+        self.screen.blit(score_surface, (10, 50))
         
         # Draw game over screen if game is over
         if self.game_over:
             self.draw_game_over()
+        
+        # Draw controls guide if enabled
+        if self.show_controls:
+            self.draw_controls_guide()
         
         pygame.display.flip()
     
@@ -509,13 +509,12 @@ class Game:
         """Carrega as imagens das plataformas"""
         platform_images = {}
         try:
-            # Tenta carregar as plataformas
-            large_platform = pygame.image.load("./imagens_background/platform_large.png").convert_alpha()
-            small_platform = pygame.image.load("./imagens_background/platform_small.png").convert_alpha()
+            # Carrega a imagem da plataforma de pedra
+            platform = pygame.image.load("./imagens_background/barra_pedra.png").convert_alpha()
             
             # Redimensiona as imagens para o tamanho correto
-            platform_images["large"] = pygame.transform.scale(large_platform, (500, 40))
-            platform_images["small"] = pygame.transform.scale(small_platform, (150, 40))
+            platform_images["large"] = pygame.transform.scale(platform, (500, 40))
+            platform_images["small"] = pygame.transform.scale(platform, (150, 40))
             
         except Exception as e:
             print(f"Erro ao carregar imagens das plataformas: {str(e)}")

@@ -3,6 +3,7 @@ import sys
 import random
 import math
 from game import Game
+from level_manager import LevelManager
 
 # Initialize Pygame
 pygame.init()
@@ -351,22 +352,27 @@ class Menu:
             self.clock.tick(60)
     
     def start_game(self):
-        """Start the game with selected options"""
+        """Start the game with selected characters"""
+        # Create level manager
+        level_manager = LevelManager()
+        
+        # Create game instance with level manager
         game = Game(
-            screen=self.screen,
-            player1_class=self.player1_class,
-            player1_name=self.player1_name,
-            player2_class=self.player2_class,
-            player2_name=self.player2_name,
-            level=0,
-            background=background
+            self.screen,
+            self.player1_class,
+            self.player2_class,
+            self.player1_name,
+            self.player2_name,
+            level_manager
         )
+        
+        # Run game loop
         game.run()
 
 def main():
-    while True:
-        menu = Menu(screen)
-        menu.run()
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    menu = Menu(screen)
+    menu.run()
 
 if __name__ == "__main__":
     main() 
