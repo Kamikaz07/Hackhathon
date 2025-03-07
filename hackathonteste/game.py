@@ -199,7 +199,7 @@ class Game:
                 else:
                     self.player1.health = 0
                     self.player1.rect.x = 250
-                    self.player1.rect.y = 400
+                    self.player1.rect.y = 300
             else:
                 self.player2.lives -= 1
                 if self.player2.lives <= 0:
@@ -208,7 +208,7 @@ class Game:
                 else:
                     self.player2.health = 0
                     self.player2.rect.x = 550
-                    self.player2.rect.y = 400
+                    self.player2.rect.y = 300
     
     def draw(self):
         """Draw everything to the screen"""

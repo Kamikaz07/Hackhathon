@@ -39,8 +39,8 @@ class Character:
         self.y = y
         self.name = name
         self.is_player2 = is_player2
-        self.width = 50
-        self.height = 50
+        self.width = 75
+        self.height = 80
         self.rect = pygame.Rect(x, y, self.width, self.height)
         self.speed = 5
         self.health = 0  # Damage percentage starts at 0
@@ -327,8 +327,13 @@ class Character:
         # Draw name only, removed percentage display
         name_font = pygame.font.Font(None, 24)
         name_surface = name_font.render(self.name, True, (255, 255, 255))
+<<<<<<< HEAD
         screen.blit(name_surface, (self.rect.x, self.rect.y - 30))
         
+=======
+        screen.blit(name_surface, (self.x, self.y - 30))
+        pygame.draw.rect(screen, (255, 255, 0), self.rect, 2)
+>>>>>>> 2442878174a4e5a600a92355e0b2789b174e8181
         # Draw effects
         self.draw_effects(screen)
         self.update_effects()
