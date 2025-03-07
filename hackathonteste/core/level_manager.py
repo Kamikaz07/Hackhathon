@@ -109,9 +109,9 @@ class LevelManager:
         
         # Nível 1 - Arena Básica
         level1_platforms = [
-            (center_x - 100, 400, Platform.MEDIUM),  # Plataforma central
-            (center_x - 300, 300, Platform.SMALL),  # Plataforma esquerda
-            (center_x + 150, 300, Platform.SMALL),  # Plataforma direita
+            (center_x - 100, 470, Platform.MEDIUM),  # Plataforma central
+            (center_x - 300, 340, Platform.SMALL),  # Plataforma esquerda
+            (center_x + 200, 340, Platform.SMALL),  # Plataforma direita
             (center_x - 400, 600, Platform.GROUND)  # Chão
         ]
         spawn_points1 = [(center_x - 250, 200), (center_x + 250, 200)]
@@ -120,9 +120,9 @@ class LevelManager:
         # Nível 2 - Ilhas Flutuantes
         level2_platforms = [
             (center_x - 50, 250, Platform.SMALL),  # Plataforma flutuante central
-            (center_x - 250, 350, Platform.SMALL),  # Plataforma esquerda
-            (center_x + 150, 350, Platform.SMALL),  # Plataforma direita
-            (center_x - 150, 450, Platform.MEDIUM),  # Plataforma central inferior
+            (center_x - 270, 350, Platform.SMALL),  # Plataforma esquerda
+            (center_x + 180, 350, Platform.SMALL),  # Plataforma direita
+            (center_x - 150, 470, Platform.MEDIUM),  # Plataforma central inferior
             (center_x - 400, 600, Platform.GROUND)  # Chão
         ]
         spawn_points2 = [(center_x - 250, 250), (center_x + 250, 250)]
@@ -134,7 +134,7 @@ class LevelManager:
             (center_x - 300, 250, Platform.SMALL),  # Plataforma alta esquerda
             (center_x + 200, 250, Platform.SMALL),  # Plataforma alta direita
             (center_x - 50, 350, Platform.SMALL),  # Plataforma do meio
-            (center_x - 200, 450, Platform.MEDIUM),  # Plataforma inferior
+            (center_x - 200, 470, Platform.MEDIUM),  # Plataforma inferior
             (center_x - 400, 600, Platform.GROUND)  # Chão
         ]
         spawn_points3 = [(center_x - 200, 350), (center_x + 200, 350)]
@@ -144,8 +144,8 @@ class LevelManager:
         level4_platforms = [
             (center_x - 200, 200, Platform.SMALL),  # Superior esquerda
             (center_x + 100, 300, Platform.SMALL),  # Superior direita
-            (center_x - 300, 400, Platform.SMALL),  # Inferior esquerda
-            (center_x, 450, Platform.SMALL),  # Inferior direita
+            (center_x - 300, 460, Platform.SMALL),  # Inferior esquerda
+            (center_x, 420, Platform.SMALL),  # Inferior direita
             (center_x - 400, 600, Platform.GROUND)  # Chão
         ]
         spawn_points4 = [(center_x - 250, 300), (center_x + 250, 300)]

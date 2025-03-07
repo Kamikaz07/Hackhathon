@@ -21,6 +21,7 @@ class Game:
         self.winner = None
         self.respawn_delay = 120  # 2 segundos para respawn
         self.respawn_timer = 0
+        self.mosqueteiro = pygame.image.load("./imagens_characters/mosqueteiro.jpeg").convert_alpha()
         
         # Controls guide
         self.show_controls = True
@@ -122,13 +123,21 @@ class Game:
         if self.game_started:
             # Check for out of bounds
             for player in [self.player1, self.player2]:
-                if player.y > 700:  # Reduzido de 800 para 700 para corresponder às novas posições das plataformas
+                if player.y > 700:
+                    if self.current_time == 210 and player == self.player1:
+                            self.screen.blit(self.mosqueteiro, (0,0))
+                            self.player1_lives +=1
+                    if self.current_time == 210 and player == self.player2:
+                            self.screen.blit(self.mosqueteiro, (0,0))
+                            self.player2_lives +=1        
+                         # Reduzido de 800 para 700 para corresponder às novas posições das plataformas
                     if player == self.player1:
                         self.player1_lives -= 1
                         player.lives = self.player1_lives
                     else:
                         self.player2_lives -= 1
                         player.lives = self.player2_lives
+                    
                     
                     # Reposiciona o jogador se ainda tiver vidas
                     if (player == self.player1 and self.player1_lives > 0) or (player == self.player2 and self.player2_lives > 0):

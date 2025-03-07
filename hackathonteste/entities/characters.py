@@ -65,7 +65,12 @@ class Character:
         self.air_resistance = 0.95
         self.ground_snap_distance = 5  # Nova variável para snap ao chão
         self.last_ground_y = y  # Nova variável para rastrear última posição no chão
-        
+        # Buff system
+        self.active_buffs = []
+        self.buff_durations = {}
+        self.attack_multiplier = 1.0
+        self.has_power_buff = False
+        self.power_buff_timer = 0
         # Combat
         self.special_cooldown = 0
         self.special_cooldown_max = 180  # 3 seconds
@@ -332,7 +337,7 @@ class Character:
         name_font = pygame.font.Font(None, 24)
         name_surface = name_font.render(self.name, True, (255, 255, 255))
         screen.blit(name_surface, (self.x, self.y - 30))
-        pygame.draw.rect(screen, (255, 255, 0), self.rect, 2)
+       
         # Draw effects
         self.draw_effects(screen)
         self.update_effects()
